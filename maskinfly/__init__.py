@@ -6,7 +6,7 @@ __all__ = [
     "mask", "AuditLogger", "Masker"
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None):
     """Основной удобный интерфейс для маскировки данных.
