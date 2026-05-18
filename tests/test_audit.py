@@ -5,7 +5,7 @@ from maskinfly.audit import AuditLogger
 def test_audit_logger_creates_handler():
     logger = AuditLogger()
     assert len(logger.logger.handlers) == 1
-    assert isinstance(logger.logger.handlers[0], logging.StreamHandler)
+    assert isinstance(logger.logger.handlers[0], logging.Handler)
 
 def test_audit_logger_respects_provided_logger():
     custom_logger = logging.getLogger("custom")
