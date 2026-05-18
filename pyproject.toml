@@ -49,5 +49,5 @@ python_functions = "test_*"
 
 [project.urls]
 
-Homepage = "https://github.com/MordantAcid/maskinfly"
-Repository = "https://github.com/MordantAcid/maskinfly.git"
+Homepage = "https://github.com/username/maskinfly"
+Repository = "https://github.com/username/maskinfly.git"
