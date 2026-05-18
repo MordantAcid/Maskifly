@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maskinfly"
-version = "0.1.1"
+version = "0.1.2"
 description = "Библиотека для маскировки чувствительных данных (пароли, токены, и т.д.) в строках, словарях и списках"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "you@example.com"},
+    {name = "MordantAcid", email = "cagej7517@gmail.com"},
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -25,12 +25,16 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-keywords = ["masking", "data-masking", "privacy", "security", "pii", "secrets"]
+keywords = ["masking", "data-masking", "privacy", "security", "pii", "secrets", "autograd", "neural-networks"]
+
+dependencies = [
+    "numpy>=1.22.0"
+]
 
 [project.optional-dependencies]
 pydantic = ["pydantic>=2.0.0"]
 test = ["pytest>=7.0.0"]
-dev = ["pytest>=7.0.0", "pydantic>=2.0.0"]
+dev = ["pytest>=7.0.0", "pydantic>=2.0.0", "black>=22.0", "isort>=5.10", "mypy>=0.990"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -45,4 +49,5 @@ python_functions = "test_*"
 
 [project.urls]
 
-Homepage = "https://github.com/MordantAcid/maskifly"
+Homepage = "https://github.com/MordantAcid/maskinfly"
+Repository = "https://github.com/MordantAcid/maskinfly.git"
