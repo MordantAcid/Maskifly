@@ -28,7 +28,7 @@
 ```bash
 pip install maskify
 
-git clone https://github.com/MordantAcid/maskifly.git
+git clone "https://github.com/username/maskinfly.git"
 
 Для поддержки pydantic.SecretStr установите дополнительную зависимость:
 
