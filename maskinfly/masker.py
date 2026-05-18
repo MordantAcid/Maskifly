@@ -13,13 +13,14 @@ except ImportError:
     SecretStr = None
 
 class Masker:
-    def __init__(self, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None):
+    def __init__(self, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None, auto_varname: bool = False):
         self.audit_enabled = audit_enabled
         self.audit = audit_logger or AuditLogger() if audit_enabled else None
         self.patterns = PATTERNS.copy()
         self.mask_str = DEFAULT_MASK
+        self.auto_varname = auto_varname
 
-    def mask(self, data: Any, path: str = "") -> Any:
+    def mask(self, data: Any, path: str = "", var_name: Optional[str] = None) -> Any:
         if data is None:
             return None
 
@@ -31,7 +32,7 @@ class Masker:
 
         # Маскировка строк
         if isinstance(data, str):
-            return self.mask_string(data, path)
+            return self.mask_string(data, path, var_name=var_name)
 
         # Маскировка словарей
         if isinstance(data, Mapping):
@@ -64,7 +65,7 @@ class Masker:
         # Остальные типы не маскируем
         return data
 
-    def mask_string(self, value: str, path: str) -> str:
+    def mask_string(self, value: str, path: str, var_name: Optional[str] = None) -> str:
         masked = value
         reason = None
 
@@ -77,8 +78,14 @@ class Masker:
 
         # 2. По имени переменной (если еще не замаскировано)
         if reason is None:
-            var_name = find_variable_name(value, frame_depth=3)
-            if var_name and var_name.lower() in SENSITIVE_VAR_NAMES:
+            if var_name is not None:
+                name = var_name
+            elif self.auto_varname:
+                name = find_variable_name(value, frame_depth=3)
+            else:
+                name = None
+            
+            if name and name.lower() in SENSITIVE_VAR_NAMES:
                 masked = self.mask_str
                 reason = "varname"
 
