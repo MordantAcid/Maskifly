@@ -1,7 +1,7 @@
 import inspect
 from typing import Any, Optional
 
-def find_variable_name(value: Any, frame_depth: int = 2) -> Optional[str]:
+def find_variable_name(value: Any, frame_depth: int = 2) -> Optional[str]: # эта функция медленная и отклячена по умолчанию
     frame = inspect.currentframe()
     try:
         for _ in range(frame_depth):
