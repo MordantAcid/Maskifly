@@ -11,9 +11,9 @@ __all__ = [
     "Tensor", "no_grad", "nn", "optim"
 ]
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
-def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None):
+def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None, auto_varname: bool = False, var_name: Optional[str] = None):
     """Основной удобный интерфейс для маскировки данных.
     
     Примеры:
@@ -22,7 +22,6 @@ def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] 
 
         >>> mask("My token is abc123xyz", audit_enabled=True)
         'My token is ***'
-
     Args:
         data: любые данные (строка, dict, список и т.д.)
         audit_enabled: включить логирование аудита
@@ -31,5 +30,5 @@ def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] 
     Returns:
         замаскированная копия данных
     """
-    masker = Masker(audit_enabled=audit_enabled, audit_logger=audit_logger)
-    return masker.mask(data)
+    masker = Masker(audit_enabled=audit_enabled, audit_logger=audit_logger, auto_varname=auto_varname)
+    return masker.mask(data, var_name=var_name)
