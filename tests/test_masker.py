@@ -6,6 +6,10 @@ pytestmark = pytest.mark.skipif(not HAS_PYDANTIC, reason="pydantic not installed
 
 # Фикстура с auto_varname=True для тестов, где нужно автоопределение имени
 @pytest.fixture
+def masker_with_audit(audit_logger):
+    return Masker(audit_enabled=True, audit_logger=audit_logger)
+
+@pytest.fixture
 def masker_with_auto_varname():
     return Masker(audit_enabled=False, auto_varname=True)
 
@@ -74,7 +78,22 @@ def test_mask_other_type(masker_no_audit):
     assert masker_no_audit.mask(None) is None
 
 def test_mask_replacer(masker_with_audit):
-    pattern = masker_with_audit.patterns["password"]
-    match = pattern.search("password=12345")
-    replaced = masker_with_audit._replacer(match)
+    # Берём паттерн "password"
+    regex, replace_func = masker_with_audit.patterns["password"]
+    match = regex.search("password=12345")
+    # Применяем функцию замены с параметрами маски
+    replaced = replace_func(match, masker_with_audit.mask_char, masker_with_audit.mask_length)
     assert replaced == "password=***"
+
+def test_custom_mask_char_and_length():
+    masker = Masker(mask_char='#', mask_length=5)
+    assert masker.mask_string("password=123", "path") == "password=#####"
+    assert masker.mask_string("user@example.com", "path") == "u#####@example.com"
+
+def test_custom_pattern():
+    import re
+    def my_replacer(match, char, length):
+        return char * length
+    custom = {"myid": (re.compile(r'\d{4}'), my_replacer)}
+    masker = Masker(custom_patterns=custom)
+    assert masker.mask_string("code 1234", "path") == "code ***"
