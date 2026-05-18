@@ -1,12 +1,17 @@
 from maskinfly.masker import Masker
 from maskinfly.audit import AuditLogger
+from maskinfly.tensor import Tensor
+from maskinfly.autograd import no_grad
+from maskinfly import nn
+from maskinfly import optim
 from typing import Optional
 
 __all__ = [
-    "mask", "AuditLogger", "Masker"
+    "mask", "AuditLogger", "Masker",
+    "Tensor", "no_grad", "nn", "optim"
 ]
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 def mask(data, audit_enabled: bool = False, audit_logger: Optional[AuditLogger] = None):
     """Основной удобный интерфейс для маскировки данных.
