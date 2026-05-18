@@ -11,7 +11,7 @@ __all__ = [
     "Tensor", "no_grad", "nn", "optim"
 ]
 
-__version__ = "0.1.5"  # Обновляем версию
+__version__ = "0.1.4"  # Обновляем версию
 
 def mask(data,
          audit_enabled: bool = False,
