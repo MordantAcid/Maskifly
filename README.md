@@ -1,22 +1,34 @@
 # maskinfly
 
-**maskinfly** — это легковесная библиотека для рекурсивной маскировки чувствительных данных (паролей, токенов, email, номеров карт, SSN, IP-адресов и т.д.) в Python-структурах. Она автоматически обнаруживает и заменяет конфиденциальную информацию в строках, словарях и списках, а также поддерживает аудит всех произведённых замен.
+**maskinfly** – это универсальная библиотека для Python, объединяющая:
+- **Рекурсивную маскировку** чувствительных данных (пароли, токены, email, номера карт, SSN, IP и др.)
+- **Лёгкий autograd** и базовые компоненты для создания нейронных сетей (тензоры с автоматическим дифференцированием, слои, оптимизаторы).
 
 ## Возможности
 
-- **Рекурсивная маскировка** — работает с вложенными словарями, списками и другими коллекциями.
-- **Встроенные паттерны** — пароли, JWT, email, номера кредитных карт (регулярное выражение ошибочно, но оставлено для совместимости), SSN, IP-адреса, токены.
-- **Маскировка по имени переменной** — если в коде переменная называется `password`, `api_key` и т.п., её значение будет замаскировано даже без явного паттерна.
-- **Аудит** — логирование причины замены (`pattern`, `varname`, `type`) и пути к значению.
-- **Поддержка `pydantic.SecretStr`** — если установлен Pydantic, объекты `SecretStr` маскируются автоматически.
-- **Простой интерфейс** — функция `mask()` для быстрой маскировки или класс `Masker` для тонкой настройки.
+### Маскировка данных
+
+- Рекурсивная обработка `dict`, `list`, `str`, `pydantic.SecretStr`.
+- Встроенные регулярные выражения: пароли, JWT, email, кредитные карты (шаблон), SSN, IP-адреса, токены.
+- Маскировка по имени переменной (например, `password = "secret"` → `***`).
+- Аудит замен: логирование пути, причины и типа замаскированного значения.
+- Простой интерфейс: функция `mask()` или класс `Masker`.
+
+###  Autograd и нейронные сети
+
+- **`Tensor`** – многомерный массив (обёртка над `numpy`) с поддержкой autograd.
+- **Автоматическое дифференцирование** – градиенты скалярных функций через `.backward()`.
+- **Базовые слои**: `Linear`, `ReLU`, `Sequential`.
+- **Функции потерь**: `mse_loss`.
+- **Оптимизатор**: `SGD`.
+- **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов.
 
 ## Установка
 
 ```bash
 pip install maskify
 
-git clone https://github.com/MordantAcid/Maskifly.git
+git clone https://github.com/MordantAcid/maskifly.git
 
 Для поддержки pydantic.SecretStr установите дополнительную зависимость:
 
@@ -24,87 +36,92 @@ pip install .[pydantic]
 
 Быстрый старт
 
-from maskify import mask
+Маскировка данных
 
-# Маскировка в словаре
+from maskinfly import mask
+
+# Словарь с конфиденциальными полями
 data = {
-    "user": "john",
+    "user": "alice",
     "password": "secret123",
-    "email": "john@example.com"
+    "token": "abc123xyz",
+    "email": "alice@example.com"
 }
 masked = mask(data)
 print(masked)
-# {'user': 'john', 'password': '***', 'email': 'john@example.com'}
+# {'user': 'alice', 'password': '***', 'token': '***', 'email': 'alice@example.com'}
 
-# Маскировка в строке
-text = "My token is abc123xyz"
-print(mask(text))
-# 'My token is ***'
+# Строка с JWT
+jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+print(mask(f"Authorization: {jwt}"))
+# 'Authorization: ***'
 
-# Включение аудита (лог будет выведен в stderr)
+# Включение аудита (логи в stderr)
 mask(data, audit_enabled=True)
-# Вывод в лог: 2025-01-01 12:00:00 - MASKIFY_AUDIT - Значение маски 'password' | reason=pattern | type=str
 
-Использование
-Функция mask()
-Самый простой способ — импортировать mask и передать данные:
+Использование класса Masker с собственным логгером
 
-result = mask(data, audit_enabled=False, audit_logger=None)
-
-- data — любые данные (str, dict, list и т.д.).
-- audit_enabled — если True, включает логирование аудита.
-- audit_logger — собственный экземпляр AuditLogger (опционально).
-
-Класс Masker
-Для более гибкого управления создайте экземпляр Masker:
-
-from maskify import Masker
-
-masker = Masker(audit_enabled=True)
-masked_data = masker.mask(data)
-
-Параметры конструктора:
-
-- audit_enabled: bool = False
-- audit_logger: Optional[AuditLogger] = None
-
-Метод mask(data, path="") принимает произвольные данные и опциональный строковый путь (используется для аудита).
-
-Аудит: AuditLogger
-По умолчанию аудит пишет в logging.getLogger("maskify.audit") с уровнем INFO и форматированием '%(asctime)s - MASKIFY_AUDIT - %(message)s'. Вы можете передать свой логгер:
-
+from maskinfly import Masker, AuditLogger
 import logging
-from maskify import AuditLogger
 
 custom_logger = logging.getLogger("my_audit")
 audit = AuditLogger(logger=custom_logger)
 masker = Masker(audit_enabled=True, audit_logger=audit)
-masker.mask({"secret": "value"})
 
-Маскировка по имени переменной
-Если значение не подошло ни под один паттерн, библиотека пытается определить имя переменной, в которой оно хранится (с помощью inspect). Если имя входит в набор SENSITIVE_VAR_NAMES, значение заменяется на ***.
+masker.mask({"api_key": "ABCD1234"})
 
-Чувствительные имена по умолчанию:
+Работа с тензорами и autograd
 
-password, passwd, pwd, secret, token, api_key, apikey,
-credit_card, creditcard, card_number, ssn, social_security,
-pin, auth, bearer, private_key
+from maskinfly import Tensor, no_grad
 
-Пример:
+# Создание тензоров
+a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+b = Tensor([[5.0, 6.0], [7.0, 8.0]], requires_grad=True)
 
-secret_token = "abc123xyz"
-mask(secret_token)  # -> "***" (переменная называется secret_token)
+# Операции
+c = a.matmul(b)          # матричное умножение
+loss = c.sum()           # скалярная потеря
+loss.backward()          # вычисление градиентов
 
-Работа с pydantic.SecretStr
-Если установлен Pydantic, объекты SecretStr маскируются вне зависимости от содержимого:
+print(a.grad)            # градиент по a
+print(b.grad)            # градиент по b
 
-from pydantic import SecretStr
-from maskify import mask
+# Отключение градиентов
+with no_grad():
+    d = a + b            # здесь градиенты не вычисляются
 
-secret = SecretStr("real_password")
-masked = mask(secret)  # -> "***"
+Простая нейронная сеть
 
-Требования
-Python ≥ 3.7
+from maskinfly import nn, optim
+from maskinfly.tensor import Tensor
 
-Для опциональной поддержки SecretStr: pydantic >= 2.0.0
+# Данные (XOR)
+X = Tensor([[0, 0], [0, 1], [1, 0], [1, 1]], requires_grad=False)
+y = Tensor([[0], [1], [1], [0]], requires_grad=False)
+
+# Модель
+model = nn.Sequential(
+    nn.Linear(2, 4),
+    nn.ReLU(),
+    nn.Linear(4, 1)
+)
+
+optimizer = optim.SGD(model.parameters(), lr=0.1)
+
+# Обучение
+for epoch in range(1000):
+    pred = model(X)
+    loss = nn.mse_loss(pred, y)
+    
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    
+    if epoch % 200 == 0:
+        print(f"Epoch {epoch}, loss: {loss.data.item():.4f}")
+
+# Проверка
+print(model(X).data)
+
+Лицензия
+MIT. Подробнее в файле LICENSE.
