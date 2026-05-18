@@ -26,3 +26,18 @@ def test_mask_function_custom_audit_logger():
     with patch.object(custom_logger, "log") as mock_log:
         mask("token=xyz", audit_enabled=True, audit_logger=custom_logger)
         mock_log.assert_called()
+
+def test_mask_function_with_explicit_var_name():
+    """Передача var_name в mask() маскирует строку независимо от auto_varname."""
+    result = mask("my_secret_value", var_name="password")
+    assert result == "***"
+
+def test_mask_function_with_auto_varname_enabled(caplog):
+    """При auto_varname=True и подходящем имени переменной строка маскируется."""
+    caplog.set_level("INFO", logger="maskify.audit")
+    secret = "very_secret"
+    # Чтобы имя переменной 'secret' совпало с чувствительным списком
+    with patch("maskinfly.masker.find_variable_name", return_value="secret"):
+        result = mask(secret, auto_varname=True, audit_enabled=True)
+    assert result == "***"
+    assert len(caplog.records) > 0
