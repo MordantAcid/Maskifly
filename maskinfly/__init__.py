@@ -4,7 +4,7 @@ from maskinfly.tensor import Tensor
 from maskinfly.autograd import no_grad
 from maskinfly import nn
 from maskinfly import optim
-from typing import Optional, Dict, Tuple, Callable, Pattern
+from typing import Optional, Dict, Tuple, Callable, Pattern, Any
 
 __all__ = [
     "mask", "AuditLogger", "Masker",
@@ -20,41 +20,20 @@ def mask(data,
          var_name: Optional[str] = None,
          mask_char: str = "*",
          mask_length: int = 3,
-         custom_patterns: Optional[Dict[str, Tuple[Pattern, Callable]]] = None):
-    """
-    Основной удобный интерфейс для маскировки данных.
-
-    Примеры:
-        >>> mask({"user": "john", "password": "secret123"})
-        {'user': 'john', 'password': '***'}
-
-        >>> mask("user@example.com", mask_char='#', mask_length=2)
-        'u##@example.com'
-
-        >>> mask("My token is abc123", audit_enabled=True)
-        'My token is ***'
-
-    Args:
-        data: любые данные (строка, dict, список и т.д.)
-        audit_enabled: включить логирование аудита
-        audit_logger: свой экземпляр AuditLogger (опционально)
-        auto_varname: автоматически определять имя переменной (медленно)
-        var_name: явное имя переменной для маскировки
-        mask_char: символ маски (по умолчанию '*')
-        mask_length: длина маски (по умолчанию 3)
-        custom_patterns: словарь дополнительных паттернов вида
-                        {name: (regex_pattern, replace_func)}.
-                        replace_func должна принимать (match, mask_char, mask_length)
-
-    Returns:
-        замаскированная копия данных
-    """
+         custom_patterns: Optional[Dict[str, Tuple[Pattern, Callable]]] = None,
+         # Новые параметры
+         audit_format: str = 'text',
+         audit_custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
+         audit_app_name: Optional[str] = None):
     masker = Masker(
         audit_enabled=audit_enabled,
         audit_logger=audit_logger,
         auto_varname=auto_varname,
         mask_char=mask_char,
         mask_length=mask_length,
-        custom_patterns=custom_patterns
+        custom_patterns=custom_patterns,
+        audit_format=audit_format,
+        audit_custom_handler=audit_custom_handler,
+        audit_app_name=audit_app_name
     )
     return masker.mask(data, var_name=var_name)
