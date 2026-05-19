@@ -46,8 +46,7 @@ def test_mask_string_audit(masker_with_audit_and_auto_varname, audit_logger):
         assert result == "***"
         with patch.object(audit_logger, "log") as mock_log:
             masker_with_audit_and_auto_varname.mask_string("secret", "path")
-            mock_log.assert_called_once_with("path", "varname", "str")
-
+            mock_log.assert_called_once_with("path", "varname", "str", value='secret')
 def test_mask_dict(masker_no_audit):
     data = {
         "user": "john",
