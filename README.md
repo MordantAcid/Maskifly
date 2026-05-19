@@ -11,24 +11,31 @@
 - Рекурсивная обработка `dict`, `list`, `str`, `pydantic.SecretStr`.
 - Встроенные регулярные выражения: пароли, JWT, email, кредитные карты, SSN, IP-адреса, токены.
 - Маскировка по имени переменной (например, `password = "secret"` → `***`).
-- Аудит замен: логирование пути, причины и типа замаскированного значения.
+- **Явное указание имени переменной** через параметр `var_name` (рекомендуется для production).
+- Аудит замен: логирование пути, причины, типа и **хеша** (SHA256) исходного значения.
+- **Гибкий аудит**: форматы `text` или `json`, кастомный обработчик, имя приложения.
 - Простой интерфейс: функция `mask()` или класс `Masker`.
 - **Поддержка `pydantic.SecretStr`** (опционально).
 - **Кастомизация** маскирующего символа и длины маски.
 - **Добавление собственных regex-паттернов** через параметр `custom_patterns`.
 - **Корректная обработка циклических ссылок** в изменяемых структурах.
--
+- **Маскировка по чувствительным путям** (например, ключ `"password"` в словаре).
 
 ### Autograd и нейронные сети
 
 - **`Tensor`** – многомерный массив (обёртка над `numpy`) с поддержкой autograd.
 - **Автоматическое дифференцирование** – градиенты скалярных функций через `.backward()`.
+- **Базовые операции**: сложение, умножение, матричное умножение, возведение в степень, релу, экспонента, логарифм, изменение формы, суммирование по оси, среднее, `stack`.
 - **Базовые слои**: `Linear`, `ReLU`, `Sequential`.
 - **Функции потерь**: `mse_loss`.
 - **Оптимизатор**: `SGD`.
 - **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов.
 - **Функция `is_grad_enabled()`** – проверка состояния вычисления градиентов.
-- **Расширенные операции**: `exp`, `log`, `mean`, `stack`, `reshape`, суммирование по оси.
+
+## Установка
+
+```bash
+pip install maskinfly
 
 ## Установка
 
@@ -56,11 +63,9 @@ data = {
 }
 masked = mask(data)
 print(masked)
-# {'user': 'alice', 'password': '***', 'token': '***', 'email': 'al***@example.com'}
+# {'user': 'alice', 'password': '***', 'token': '***', 'email': 'a***@example.com'}
 
-Примечание: по умолчанию длина маски – 3 символа, поэтому email маскируется как al***@example.com.
-
-# Строка с JWT
+По умолчанию длина маски – 3 символа, поэтому email маскируется как a***@example.com.# Строка с JWT
 jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
 print(mask(f"Authorization: {jwt}"))
 # 'Authorization: ***'
@@ -68,8 +73,7 @@ print(mask(f"Authorization: {jwt}"))
 # Включение аудита (логи в stderr)
 mask(data, audit_enabled=True)
 
-Гибкая настройка маски
-Вы можете изменить символ и длину маски прямо в функции mask:
+Настройка символа и длины маски
 
 mask("my_secret_password", mask_char='X', mask_length=5)   # 'XXXXX'
 mask("user@example.com", mask_char='*', mask_length=4)     # 'u****@example.com'
@@ -102,6 +106,19 @@ custom = {
 data = "User ID: 1234-5678"
 print(mask(data, custom_patterns=custom))  # 'User ID: ***'
 
+Аудит с JSON и кастомным обработчиком
+
+from maskinfly import AuditLogger, Masker
+
+def custom_audit_handler(entry):
+    # Отправить entry в Elasticsearch, Kafka и т.д.
+    print(f"[CUSTOM] {entry}")
+
+audit = AuditLogger(format='json', custom_handler=custom_audit_handler, app_name="my_app")
+masker = Masker(audit_enabled=True, audit_logger=audit)
+masker.mask({"api_key": "ABCD1234"})
+# Вызовет custom_audit_handler со словарём, содержащим timestamp, path, reason, hash и др.
+
 Обработка циклических ссылок
 Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
 
@@ -129,15 +146,6 @@ from maskinfly import Masker
 masker = Masker(mask_char='#', mask_length=6)
 print(masker.mask("password=12345"))  # 'password=######'
 
-Аудит маскировки
-
-from maskinfly import AuditLogger, Masker
-
-audit = AuditLogger()  # логирует в stderr
-masker = Masker(audit_enabled=True, audit_logger=audit)
-masker.mask({"api_key": "ABCD1234"})
-# В stderr: 2025-... - MASKIFY_AUDIT - Значение маски 'api_key' | reason=sensitive_path | type=str
-
 Autograd и нейронные сети
 Тензоры и автоматическое дифференцирование
 
@@ -156,9 +164,9 @@ loss.backward()          # вычисление градиентов
 print(a.grad)            # градиент по a
 print(b.grad)            # градиент по b
 
-# Пример с broadcasting, ReLU, экспонентой
+# Пример с broadcasting, ReLU, экспонентой, логарифмом
 x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
-y = (x ** 2).relu().exp()
+y = (x ** 2).relu().exp().log()
 y.mean().backward()
 print(x.grad)
 
