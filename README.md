@@ -16,6 +16,8 @@
 - **Поддержка `pydantic.SecretStr`** (опционально).
 - **Кастомизация** маскирующего символа и длины маски.
 - **Добавление собственных regex-паттернов** через параметр `custom_patterns`.
+- **Корректная обработка циклических ссылок** в изменяемых структурах.
+-
 
 ### Autograd и нейронные сети
 
@@ -25,6 +27,7 @@
 - **Функции потерь**: `mse_loss`.
 - **Оптимизатор**: `SGD`.
 - **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов.
+- **Функция `is_grad_enabled()`** – проверка состояния вычисления градиентов.
 - **Расширенные операции**: `exp`, `log`, `mean`, `stack`, `reshape`, суммирование по оси.
 
 ## Установка
@@ -38,10 +41,6 @@ pip install maskinfly
 git clone "https://github.com/MordantAcid/maskifly.git"
 
 cd maskinfly
-
-Для поддержки pydantic.SecretStr установите дополнительную зависимость:
-
-pip install maskinfly[pydantic]
 
 Быстрый старт
 Маскировка данных
@@ -57,7 +56,9 @@ data = {
 }
 masked = mask(data)
 print(masked)
-# {'user': 'alice', 'password': '***', 'token': '***', 'email': 'u**@example.com'}
+# {'user': 'alice', 'password': '***', 'token': '***', 'email': 'al***@example.com'}
+
+Примечание: по умолчанию длина маски – 3 символа, поэтому email маскируется как al***@example.com.
 
 # Строка с JWT
 jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
@@ -101,6 +102,17 @@ custom = {
 data = "User ID: 1234-5678"
 print(mask(data, custom_patterns=custom))  # 'User ID: ***'
 
+Обработка циклических ссылок
+Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
+
+from maskinfly import Masker
+
+masker = Masker()
+d = {}
+d["self"] = d          # цикл
+result = masker.mask(d)
+print(result)          # {'self': '***'}
+
 Работа с pydantic.SecretStr
 
 from pydantic import SecretStr
@@ -114,7 +126,6 @@ print(masked)  # '***'
 
 from maskinfly import Masker
 
-# Создаём маскировщик с нестандартными параметрами
 masker = Masker(mask_char='#', mask_length=6)
 print(masker.mask("password=12345"))  # 'password=######'
 
@@ -125,12 +136,13 @@ from maskinfly import AuditLogger, Masker
 audit = AuditLogger()  # логирует в stderr
 masker = Masker(audit_enabled=True, audit_logger=audit)
 masker.mask({"api_key": "ABCD1234"})
-# В stderr: 2025-... - MASKIFY_AUDIT - Значение маски 'api_key' | reason=varname | type=str
+# В stderr: 2025-... - MASKIFY_AUDIT - Значение маски 'api_key' | reason=sensitive_path | type=str
 
 Autograd и нейронные сети
 Тензоры и автоматическое дифференцирование
 
 from maskinfly import Tensor, no_grad
+from maskinfly.autograd import is_grad_enabled
 
 # Создание тензоров
 a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
@@ -155,7 +167,6 @@ with no_grad():
     d = a + b            # здесь градиенты не вычисляются
 
 # Проверка состояния
-from maskinfly.autograd import is_grad_enabled
 print(is_grad_enabled())  # True
 
 Дополнительные операции тензоров
