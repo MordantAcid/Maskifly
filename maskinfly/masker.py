@@ -19,16 +19,31 @@ class Masker:
                  auto_varname: bool = False,
                  mask_char: str = DEFAULT_MASK_CHAR,
                  mask_length: int = DEFAULT_MASK_LENGTH,
-                 custom_patterns: Optional[Dict[str, Tuple[re.Pattern, Callable]]] = None):
+                 custom_patterns: Optional[Dict[str, Tuple[re.Pattern, Callable]]] = None,
+                 # Новые параметры для структурированного аудита
+                 audit_format: str = 'text',
+                 audit_custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
+                 audit_app_name: Optional[str] = None):
         self.audit_enabled = audit_enabled
-        self.audit = audit_logger or AuditLogger() if audit_enabled else None
         self.auto_varname = auto_varname
         self.mask_char = mask_char
         self.mask_length = mask_length
-
         self.patterns = PATTERNS.copy()
         if custom_patterns:
             self.patterns.update(custom_patterns)
+
+        # Создаём AuditLogger с новыми параметрами
+        if audit_enabled:
+            if audit_logger is None:
+                self.audit = AuditLogger(
+                    format=audit_format,
+                    custom_handler=audit_custom_handler,
+                    app_name=audit_app_name
+                )
+            else:
+                self.audit = audit_logger
+        else:
+            self.audit = None
 
     def _get_mask_str(self) -> str:
         return self.mask_char * self.mask_length
@@ -74,13 +89,13 @@ class Masker:
         # Маскировка SecretStr (pydantic)
         if HAS_PYDANTIC and SecretStr is not None and isinstance(data, SecretStr):
             if self.audit_enabled and self.audit:
-                self.audit.log(path or "root", "type", "SecretStr")
+                self.audit.log(path or "root", "type", "SecretStr", value=data)  # передаём data
             return self._get_mask_str()
 
         # Если путь (ключ словаря или индекс) чувствительный, маскируем значение полностью
         if self._is_sensitive_path(path):
             if self.audit_enabled and self.audit:
-                self.audit.log(path, "sensitive_path", type(data).__name__)
+                self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
             return self._get_mask_str()
 
         # Маскировка строк
@@ -132,6 +147,6 @@ class Masker:
 
         # Аудит
         if self.audit_enabled and reason and masked != value and self.audit:
-            self.audit.log(path, reason, "str")
+            self.audit.log(path, reason, "str", value=value)
 
         return masked
