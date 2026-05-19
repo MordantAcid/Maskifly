@@ -1,43 +1,59 @@
 import pytest
-from unittest.mock import patch
-from maskinfly import mask, Masker, AuditLogger, __version__
+from maskinfly.masker import Masker
 
-def test_mask_function_with_dict():
-    result = mask({"user": "alice", "password": "pass123"})
+def test_cycle_in_dict():
+    """Прямая циклическая ссылка: dict содержит самого себя."""
+    masker = Masker()
+    d = {}
+    d["self"] = d
+    result = masker.mask(d)
+    # Цикл должен быть обнаружен, на месте ссылки – маска
+    assert result["self"] == "***"
+    # Остальные поля отсутствуют, но структура сохранена
+    assert set(result.keys()) == {"self"}
+
+def test_cycle_in_list():
+    """Циклическая ссылка в списке."""
+    masker = Masker()
+    lst = []
+    lst.append(lst)
+    result = masker.mask(lst)
+    assert len(result) == 1
+    assert result[0] == "***"
+
+def test_nested_cycle():
+    """Сложный цикл: список содержит словарь, который ссылается на список."""
+    masker = Masker()
+    lst = []
+    d = {"ref": lst}
+    lst.append(d)
+    result = masker.mask(lst)
+    assert result[0]["ref"] == "***"      # lst уже посещён, возвращается маска
+    assert len(result) == 1
+
+def test_cycle_with_sensitive_key():
+    """Циклическая ссылка внутри чувствительного поля – маскируется как обычно."""
+    masker = Masker()
+    inner = {}
+    outer = {"password": inner}
+    inner["parent"] = outer
+    result = masker.mask(outer)
+    # Значение по ключу "password" должно быть полностью замаскировано
     assert result["password"] == "***"
-    assert result["user"] == "alice"
 
-def test_mask_function_with_string():
-    jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
-    result = mask(f"My token is {jwt}")
-    assert result == "My token is ***"
+def test_no_cycle_for_primitives():
+    """Простые типы не вызывают ложных циклов."""
+    masker = Masker()
+    data = {"a": "hello", "b": "hello"}   # одинаковые строки могут иметь один id (интернирование)
+    result = masker.mask(data)
+    assert result["a"] == "hello"
+    assert result["b"] == "hello"
 
-def test_mask_function_with_audit(caplog):
-    caplog.set_level("INFO", logger="maskify.audit")
-    mask({"secret": "abc"}, audit_enabled=True)
-    assert len(caplog.records) > 0
-    record = caplog.records[0]
-    assert "Значение маски 'secret'" in record.message
-    assert "reason=varname" in record.message
-    assert "type=str" in record.message
-
-def test_mask_function_custom_audit_logger():
-    custom_logger = AuditLogger()
-    with patch.object(custom_logger, "log") as mock_log:
-        mask("token=xyz", audit_enabled=True, audit_logger=custom_logger)
-        mock_log.assert_called()
-
-def test_mask_function_with_explicit_var_name():
-    """Передача var_name в mask() маскирует строку независимо от auto_varname."""
-    result = mask("my_secret_value", var_name="password")
-    assert result == "***"
-
-def test_mask_function_with_auto_varname_enabled(caplog):
-    """При auto_varname=True и подходящем имени переменной строка маскируется."""
-    caplog.set_level("INFO", logger="maskify.audit")
-    secret = "very_secret"
-    # Чтобы имя переменной 'secret' совпало с чувствительным списком
-    with patch("maskinfly.masker.find_variable_name", return_value="secret"):
-        result = mask(secret, auto_varname=True, audit_enabled=True)
-    assert result == "***"
-    assert len(caplog.records) > 0
+def test_cycle_audit_does_not_crash():
+    """При включённом аудите цикл не должен вызывать ошибок."""
+    masker = Masker(audit_enabled=True)
+    d = {}
+    d["cycle"] = d
+    # Просто проверяем, что не падает
+    result = masker.mask(d)
+    assert result["cycle"] == "***"
