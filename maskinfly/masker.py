@@ -1,7 +1,17 @@
 import re
+import json
+import yaml
+
 from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 from collections.abc import Mapping as MappingABC, Sequence as SequenceABC
 from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH, full_mask_replacer
+from maskinfly.audit import AuditLogger
+from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
+
+from maskinfly.patterns import (
+    PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH,
+    full_mask_replacer, email_mask_replacer, key_value_mask_replacer
+)
 from maskinfly.audit import AuditLogger
 from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
 
@@ -11,6 +21,13 @@ try:
 except ImportError:
     HAS_PYDANTIC = False
     SecretStr = None
+
+# Сопоставление имён встроенных замен для конфигурации
+_REPLACER_MAP = {
+    "full_mask": full_mask_replacer,
+    "email_mask": email_mask_replacer,
+    "key_value": key_value_mask_replacer,
+}
 
 class Masker:
     def __init__(self,
@@ -30,6 +47,7 @@ class Masker:
         self.mask_length = mask_length
         self.patterns = PATTERNS.copy()
         self.deep_mask = deep_mask
+
         if custom_patterns:
             self.patterns.update(custom_patterns)
 
@@ -44,6 +62,74 @@ class Masker:
                 self.audit = audit_logger
         else:
             self.audit = None
+
+    def add_pattern(self, name: str, regex: Union[str, re.Pattern],
+                    replacer: Optional[Callable[[re.Match, str, int], str]] = None) -> None:
+        """
+        Добавляет новый паттерн маскировки в экземпляр Masker.
+
+        Args:
+            name: Уникальное имя паттерна.
+            regex: Регулярное выражение (строка или скомпилированный re.Pattern).
+            replacer: Функция замены, принимающая (match, mask_char, mask_length).
+                      Если None, используется full_mask_replacer.
+        """
+        if isinstance(regex, str):
+            regex = re.compile(regex)
+        if replacer is None:
+            replacer = full_mask_replacer
+        self.patterns[name] = (regex, replacer)
+
+    @classmethod
+    def from_config(cls, config_path: str, **kwargs) -> "Masker":
+        """
+        Создаёт Masker из JSON-конфигурации (опционально YAML, если установлен PyYAML).
+
+        Пример JSON:
+        {
+            "mask_char": "#",
+            "mask_length": 5,
+            "audit_enabled": true,
+            "patterns": {
+                "my_id": {
+                    "regex": "\\b\\d{4}-\\d{4}\\b",
+                    "replacer": "full_mask"
+                },
+                "custom_key": {
+                    "regex": "(?i)(my_token)(\\s*[:=]\\s*)(\\S+)",
+                    "replacer": "key_value"
+                }
+            }
+        }
+
+        Допустимые replacer: "full_mask", "email_mask", "key_value".
+        """
+        # Попробуем загрузить YAML, если файл имеет расширение .yaml/.yml и PyYAML установлен
+        if config_path.endswith(('.yaml', '.yml')):
+            try:
+                import yaml
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+            except ImportError:
+                raise ImportError("PyYAML не установлен. Используйте JSON или установите PyYAML.")
+        else:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+        custom_patterns = {}
+        for name, pat_cfg in config.get("patterns", {}).items():
+            regex_str = pat_cfg["regex"]
+            replacer_name = pat_cfg.get("replacer", "full_mask")
+            replacer = _REPLACER_MAP.get(replacer_name)
+            if replacer is None:
+                raise ValueError(f"Неизвестный replacer: {replacer_name}")
+            custom_patterns[name] = (re.compile(regex_str), replacer)
+
+        # Удаляем секцию patterns, чтобы не передавать её в __init__ как обычный параметр
+        config.pop("patterns", None)
+        # Объединяем конфигурацию с явными kwargs (приоритет у kwargs)
+        masker_kwargs = {**config, **kwargs}
+        return cls(custom_patterns=custom_patterns, **masker_kwargs)
 
     def _get_mask_str(self) -> str:
         return self.mask_char * self.mask_length
