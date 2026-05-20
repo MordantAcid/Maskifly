@@ -1,0 +1,11 @@
+{
+    "mask_char": "#",
+    "mask_length": 4,
+    "audit_enabled": false,
+    "patterns": {
+        "serial": {
+            "regex": "\\b[A-Z]{2}-\\d{4}\\b",
+            "replacer": "full_mask"
+        }
+    }
+}
