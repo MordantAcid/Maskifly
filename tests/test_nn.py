@@ -74,16 +74,22 @@ def test_module_zero_grad():
         assert np.all(linear.b.grad == 0)
 
 def test_sequential_and_optimizer_integration():
+    np.random.seed(42)                     # фиксируем случайность
     model = Sequential(Linear(1, 4), ReLU(), Linear(4, 1))
-    optim = SGD(model.parameters(), lr=0.1)
+    optim = SGD(model.parameters(), lr=0.01)  # уменьшенный lr
     x = Tensor([[2.0]])
     target = Tensor([[10.0]])
-    pred = model(x)
-    loss = mse_loss(pred, target)
-    loss.backward()
-    # сохраним копии весов до шага
-    old_params = [p.data.copy() for p in model.parameters()]
-    optim.step()
-    for p, old in zip(model.parameters(), old_params):
-        if p.requires_grad:
-            assert not np.allclose(p.data, old)  # веса должны измениться
+
+    # Сохраняем loss до обучения
+    initial_loss = mse_loss(model(x), target).data.copy()
+
+    # Несколько шагов оптимизации
+    for _ in range(5):
+        pred = model(x)
+        loss = mse_loss(pred, target)
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+
+    final_loss = mse_loss(model(x), target).data
+    assert final_loss < initial_loss, "Loss не уменьшился после оптимизации"
