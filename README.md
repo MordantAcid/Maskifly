@@ -17,9 +17,11 @@
 - Простой интерфейс: функция `mask()` или класс `Masker`.
 - **Поддержка `pydantic.SecretStr`** (опционально).
 - **Кастомизация** маскирующего символа и длины маски.
-- **Добавление собственных regex-паттернов** через параметр `custom_patterns`.
+- **Добавление собственных regex-паттернов** через параметр `custom_patterns` или метод `add_pattern`.
+- **Загрузка конфигурации из JSON/YAML** (классовый метод `Masker.from_config`).
 - **Корректная обработка циклических ссылок** в изменяемых структурах.
 - **Маскировка по чувствительным путям** (например, ключ `"password"` в словаре).
+- **Управление глубиной маскировки чувствительных ключей** (`deep_mask`).
 
 ### Autograd и нейронные сети
 
@@ -34,12 +36,7 @@
 
 ## Установка
 
-```bash
-pip install maskinfly
-
-## Установка
-
-```bash
+'''bash
 
 pip install maskinfly
 
@@ -65,7 +62,9 @@ masked = mask(data)
 print(masked)
 # {'user': 'alice', 'password': '***', 'token': '***', 'email': 'a***@example.com'}
 
-По умолчанию длина маски – 3 символа, поэтому email маскируется как a***@example.com.# Строка с JWT
+По умолчанию длина маски – 3 символа, поэтому email маскируется как a***@example.com.
+
+# Строка с JWT
 jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
 print(mask(f"Authorization: {jwt}"))
 # 'Authorization: ***'
@@ -91,20 +90,55 @@ secret = "my_secret_pass"
 result = mask(secret, auto_varname=True)
 print(result)  # '***'
 
-Добавление своих regex-паттернов
+Дополнительные возможности Masker
+
+- Глубокое маскирование (deep_mask)
+- По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
+- При deep_mask=True маскировка продолжается рекурсивно внутри значения.
+
+from maskinfly import Masker
+
+data = {"password": {"user": "admin", "token": "secret123"}}
+
+masker_shallow = Masker(deep_mask=False)
+print(masker_shallow.mask(data))  # {'password': '***'}
+
+masker_deep = Masker(deep_mask=True)
+print(masker_deep.mask(data))     # {'password': {'user': 'admin', 'token': '***'}}
+
+Добавление собственных паттернов в существующий экземпляр
 
 import re
-from maskinfly import mask
+from maskinfly import Masker
 
 def my_replacer(match, mask_char, mask_length):
     return mask_char * mask_length
 
-custom = {
-    "my_id": (re.compile(r'\d{4}-\d{4}'), my_replacer)
+masker = Masker()
+masker.add_pattern("my_id", r"\d{4}-\d{4}", my_replacer)
+print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
+
+Загрузка конфигурации из JSON / YAML
+
+// config.json
+{
+    "mask_char": "#",
+    "mask_length": 4,
+    "audit_enabled": false,
+    "patterns": {
+        "custom_key": {
+            "regex": "(?i)(my_token)(\\s*[:=]\\s*)(\\S+)",
+            "replacer": "key_value"
+        }
+    }
 }
 
-data = "User ID: 1234-5678"
-print(mask(data, custom_patterns=custom))  # 'User ID: ***'
+from maskinfly import Masker
+
+masker = Masker.from_config("config.json")
+print(masker.mask("my_token = abc123"))  # 'my_token = ####'
+
+Поддерживаются файлы .yaml / .yml (требуется установленный PyYAML). Допустимые значения replacer: "full_mask", "email_mask", "key_value".
 
 Аудит с JSON и кастомным обработчиком
 
@@ -117,7 +151,6 @@ def custom_audit_handler(entry):
 audit = AuditLogger(format='json', custom_handler=custom_audit_handler, app_name="my_app")
 masker = Masker(audit_enabled=True, audit_logger=audit)
 masker.mask({"api_key": "ABCD1234"})
-# Вызовет custom_audit_handler со словарём, содержащим timestamp, path, reason, hash и др.
 
 Обработка циклических ссылок
 Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
