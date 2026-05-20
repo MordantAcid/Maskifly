@@ -1,12 +1,20 @@
 import json
+import logging
+import pytest
 from maskinfly.audit import AuditLogger
 
-def test_audit_json_format(capsys):
+def test_audit_json_format(caplog):
+    caplog.set_level(logging.INFO, logger="maskify.audit")
     logger = AuditLogger(format='json')
     logger.log("path", "pattern", "str", value="secret123")
-    # Лог выводится через logging, перехватываем через capsys
-    # проще проверить через caplog
-    pass  # реализовать с caplog
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    # Проверяем, что запись — JSON
+    log_entry = json.loads(record.getMessage())
+    assert log_entry["path"] == "path"
+    assert log_entry["reason"] == "pattern"
+    assert log_entry["type"] == "str"
+    assert "hash" in log_entry
 
 def test_audit_custom_handler():
     entries = []
