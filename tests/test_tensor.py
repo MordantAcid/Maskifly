@@ -139,12 +139,12 @@ def test_zero_grad():
     assert t.grad == 0.0
 
 def test_no_grad_on_operations():
-    """В текущей реализации no_grad не влияет на операции с тензорами,
-    но тест проверяет, что граф всё равно строится (поведение по умолчанию)."""
+    """Проверяет, что внутри no_grad градиенты не вычисляются и тензоры не требуют градиентов."""
     with no_grad():
         a = Tensor(2.0, requires_grad=True)
         b = a ** 2
-    # b должен иметь _ctx, так как a.requires_grad=True
-    assert b._ctx is not None
-    b.backward()
-    assert a.grad == 4.0
+    assert b.requires_grad is False
+    assert b._ctx is None
+    # Вызов backward не должен ничего менять, т.к. графа нет
+    b.backward()  # не должно быть эффекта
+    assert a.grad is None or np.all(a.grad == 0)  # градиент не изменился
