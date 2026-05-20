@@ -96,3 +96,19 @@ def test_custom_pattern():
     custom = {"myid": (re.compile(r'\d{4}'), my_replacer)}
     masker = Masker(custom_patterns=custom)
     assert masker.mask_string("code 1234", "path") == "code ***"
+
+def test_sensitive_key_deep_mask_false():
+    """При deep_mask=False чувствительный ключ заменяет всё значение на маску."""
+    masker = Masker(deep_mask=False)
+    data = {"password": {"user": "admin", "token": "123"}}
+    result = masker.mask(data)
+    assert result["password"] == "***"
+
+def test_sensitive_key_deep_mask_true():
+    masker = Masker(deep_mask=True)
+    data = {"password": {"user": "admin", "token": "secret123"}}
+    result = masker.mask(data)
+    assert "password" in result
+    inner = result["password"]
+    assert inner["user"] == "admin"   # теперь работает
+    assert inner["token"] == "***"
