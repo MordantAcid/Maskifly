@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maskinfly"
-version = "0.1.7"
+version = "0.1.8"
 description = "Библиотека для маскировки чувствительных данных (пароли, токены, и т.д.) в строках, словарях и списках"
 readme = "README.md"
 requires-python = ">=3.7"
