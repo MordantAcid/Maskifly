@@ -20,7 +20,6 @@ class Masker:
                  mask_char: str = DEFAULT_MASK_CHAR,
                  mask_length: int = DEFAULT_MASK_LENGTH,
                  custom_patterns: Optional[Dict[str, Tuple[re.Pattern, Callable]]] = None,
-                 # Новые параметры для структурированного аудита
                  audit_format: str = 'text',
                  audit_custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
                  audit_app_name: Optional[str] = None,
@@ -34,7 +33,6 @@ class Masker:
         if custom_patterns:
             self.patterns.update(custom_patterns)
 
-        # Создаём AuditLogger с новыми параметрами
         if audit_enabled:
             if audit_logger is None:
                 self.audit = AuditLogger(
@@ -58,15 +56,11 @@ class Masker:
         return value, None
 
     def _is_sensitive_path(self, path: str) -> bool:
-        """Проверяет, содержит ли путь чувствительное имя (ключ словаря или имя переменной)."""
         if not path:
             return False
-        # Берём последний компонент пути (после точки или просто строку)
         last_part = path.split('.')[-1] if '.' in path else path
-        # Убираем индексы списков, например "[0]"
         if last_part.startswith('[') and last_part.endswith(']'):
             return False
-        # Если last_part содержит '[', это комбинация "field[0]" — берём часть до '['
         bracket_pos = last_part.find('[')
         if bracket_pos != -1:
             last_part = last_part[:bracket_pos]
@@ -76,45 +70,52 @@ class Masker:
         if _visited is None:
             _visited = set()
 
-        # Если путь чувствительный
+        # Чувствительный путь
         if self._is_sensitive_path(path):
-            if self.audit_enabled and self.audit:
-                self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
-            if not self.deep_mask:
-                # Полная замена значения на маску
-                return self._get_mask_str()
-            # При deep_mask=True продолжаем обработку (не возвращаем)
+            # Для строк: при deep_mask=True не логируем сейчас – это сделает mask_string
+            if isinstance(data, str):
+                if not self.deep_mask:
+                    if self.audit_enabled and self.audit:
+                        self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
+                    return self._get_mask_str()
+                # deep_mask=True – продолжаем, не логируем
+            else:
+                # Нестроковые значения: логируем всегда
+                if self.audit_enabled and self.audit:
+                    self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
+                if not self.deep_mask:
+                    return self._get_mask_str()
+                # deep_mask=True – идём в рекурсию
 
-        # None не требует обработки
         if data is None:
             return None
 
-        # Обнаружение циклических ссылок
+        # Обнаружение циклов
         if isinstance(data, (MappingABC, SequenceABC)) and not isinstance(data, str):
             obj_id = id(data)
             if obj_id in _visited:
                 return self._get_mask_str()
             _visited.add(obj_id)
 
-        # Маскировка SecretStr
+        # SecretStr
         if HAS_PYDANTIC and SecretStr is not None and isinstance(data, SecretStr):
             if self.audit_enabled and self.audit:
                 self.audit.log(path or "root", "type", "SecretStr", value=data)
             return self._get_mask_str()
 
-        # Маскировка строк
+        # Строка
         if isinstance(data, str):
             return self.mask_string(data, path, var_name)
 
-        # Рекурсивная обработка словарей
+        # Словарь
         if isinstance(data, MappingABC):
             result = {}
             for key, value in data.items():
-                new_path = f"{path}.{key}" if path else key
+                new_path = f"{path}.{str(key)}" if path else str(key)
                 result[key] = self.mask(value, new_path, var_name, _visited)
             return result
 
-        # Рекурсивная обработка последовательностей
+        # Последовательности
         if isinstance(data, SequenceABC) and not isinstance(data, str):
             result = []
             for i, item in enumerate(data):
@@ -124,23 +125,22 @@ class Masker:
                 return tuple(result)
             return result
 
-        # Для всех остальных типов возвращаем как есть
         return data
 
-
     def mask_string(self, value: str, path: str, var_name: Optional[str] = None) -> str:
+        # Если путь чувствительный, маскируем и логируем (для deep_mask=True аудит уже сделан в mask, но логируем ещё раз для единообразия)
         if self._is_sensitive_path(path):
+            if self.audit_enabled and self.audit:
+                self.audit.log(path, "sensitive_path", "str", value=value)
             return self._get_mask_str()
-    
+
         masked = value
         reason = None
 
-        # 1. Применяем паттерны
         masked, pattern_name = self._apply_pattern(value)
         if masked != value:
             reason = f"pattern:{pattern_name}" if pattern_name else "pattern"
 
-        # 2. Маскировка по имени переменной (если ещё не замаскировано)
         if reason is None:
             if var_name is not None:
                 name = var_name
@@ -153,7 +153,6 @@ class Masker:
                 masked = self._get_mask_str()
                 reason = "varname"
 
-        # Аудит
         if self.audit_enabled and reason and masked != value and self.audit:
             self.audit.log(path, reason, "str", value=value)
 
