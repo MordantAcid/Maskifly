@@ -17,6 +17,47 @@ def masker_with_auto_varname():
 def masker_with_audit_and_auto_varname(audit_logger):
     return Masker(audit_enabled=True, audit_logger=audit_logger, auto_varname=True)
 
+def test_add_pattern(masker_no_audit):
+    masker_no_audit.add_pattern("test", r"\d{4}")
+    assert masker_no_audit.mask_string("code 1234", "path") == "code ***"
+
+def test_add_pattern_with_custom_replacer(masker_no_audit):
+    def my_replacer(match, char, length):
+        return "CUSTOM"
+    masker_no_audit.add_pattern("custom", r"secret", my_replacer)
+    assert masker_no_audit.mask_string("my secret value", "path") == "my CUSTOM value"
+
+def test_from_config_json(tmp_path):
+    config = {
+        "mask_char": "#",
+        "mask_length": 2,
+        "patterns": {
+            "zip": {"regex": "\\d{5}", "replacer": "full_mask"}
+        }
+    }
+    cfg_file = tmp_path / "config.json"
+    import json
+    cfg_file.write_text(json.dumps(config))
+
+    masker = Masker.from_config(str(cfg_file))
+    assert masker.mask_string("zip 12345", "path") == "zip ##"
+    assert masker.mask_char == "#"
+    assert masker.mask_length == 2
+
+def test_from_config_yaml(tmp_path):
+    pytest.importorskip("yaml")
+    config = """
+    mask_char: '?'
+    mask_length: 3
+    patterns:
+      test: {regex: '\\d+', replacer: full_mask}
+    """
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(config)
+
+    masker = Masker.from_config(str(cfg_file))
+    assert masker.mask_string("number 999", "path") == "number ???"
+
 def test_mask_string_by_pattern(masker_no_audit):
     result = masker_no_audit.mask_string("password=12345", "test")
     assert result == "password=***"
