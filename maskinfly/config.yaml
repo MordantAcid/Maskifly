@@ -1,0 +1,6 @@
+mask_char: '*'
+mask_length: 5
+patterns:
+  api_key:
+    regex: '(?i)(api_key)(\s*[:=]\s*)(\S+)'
+    replacer: key_value
