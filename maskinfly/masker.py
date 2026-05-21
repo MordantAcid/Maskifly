@@ -2,8 +2,9 @@ import re
 import json
 import yaml
 
-from typing import Any, Dict, List, Tuple, Optional, Union, Callable
+from typing import Any, Dict, List, Tuple, Optional, Union, Callable, Pattern
 from collections.abc import Mapping as MappingABC, Sequence as SequenceABC
+
 from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH, full_mask_replacer
 from maskinfly.audit import AuditLogger
 from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
