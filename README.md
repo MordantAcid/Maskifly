@@ -34,6 +34,19 @@
 - **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов.
 - **Функция `is_grad_enabled()`** – проверка состояния вычисления градиентов.
 
+## Декоратор @mask_output
+
+Автоматически маскирует возвращаемое значение функции, используя все возможности `mask()`.
+
+```python
+from maskinfly import mask_output
+
+@mask_output(audit_enabled=True, mask_char='#', mask_length=5)
+def get_user():
+    return {"name": "Bob", "token": "xyz789"}
+
+result = get_user()   # {'name': 'Bob', 'token': '#####'}
+
 ## Установка
 
 '''bash
@@ -51,7 +64,6 @@ cd maskinfly
 
 from maskinfly import mask
 
-# Словарь с конфиденциальными полями
 data = {
     "user": "alice",
     "password": "secret123",
@@ -78,6 +90,7 @@ mask("my_secret_password", mask_char='X', mask_length=5)   # 'XXXXX'
 mask("user@example.com", mask_char='*', mask_length=4)     # 'u****@example.com'
 
 Явное указание имени переменной (рекомендуется)
+
 Автоматическое определение имени переменной (auto_varname=True) работает через интроспекцию стека и медленно. Для production используйте параметр var_name:
 
 result = mask("my_secret_pass", var_name="password")
@@ -85,16 +98,14 @@ print(result)  # '***'
 
 Маскировка по имени переменной (автоматическая, не для production)
 
-# Включите auto_varname (медленно, не рекомендуется)
 secret = "my_secret_pass"
-result = mask(secret, auto_varname=True)
+result = mask(secret, auto_varname=True)   # медленно, не рекомендуется
 print(result)  # '***'
 
 Дополнительные возможности Masker
-
-- Глубокое маскирование (deep_mask)
-- По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
-- При deep_mask=True маскировка продолжается рекурсивно внутри значения.
+Глубокое маскирование (deep_mask)
+По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
+При deep_mask=True маскировка продолжается рекурсивно внутри значения.
 
 from maskinfly import Masker
 
@@ -118,9 +129,13 @@ masker = Masker()
 masker.add_pattern("my_id", r"\d{4}-\d{4}", my_replacer)
 print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
 
-Загрузка конфигурации из JSON / YAML
+# Если replacer не указан, используется full_mask_replacer (полная замена)
+masker.add_pattern("simple", r"\b\d{3}\b")
+print(masker.mask("code 123"))  # 'code ***'
 
-// config.json
+Загрузка конфигурации из JSON / YAML
+config.json
+
 {
     "mask_char": "#",
     "mask_length": 4,
@@ -133,26 +148,36 @@ print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
     }
 }
 
+Использование:
+
 from maskinfly import Masker
 
 masker = Masker.from_config("config.json")
 print(masker.mask("my_token = abc123"))  # 'my_token = ####'
 
-Поддерживаются файлы .yaml / .yml (требуется установленный PyYAML). Допустимые значения replacer: "full_mask", "email_mask", "key_value".
+Поддерживаются файлы .yaml / .yml (требуется установленный PyYAML).
+Допустимые значения replacer: "full_mask", "email_mask", "key_value".
 
 Аудит с JSON и кастомным обработчиком
 
 from maskinfly import AuditLogger, Masker
 
 def custom_audit_handler(entry):
-    # Отправить entry в Elasticsearch, Kafka и т.д.
+    # Отправить entry в Elasticsearch, Kafka, файл и т.д.
     print(f"[CUSTOM] {entry}")
 
-audit = AuditLogger(format='json', custom_handler=custom_audit_handler, app_name="my_app")
+audit = AuditLogger(
+    format='json',
+    custom_handler=custom_audit_handler,
+    app_name="my_app"
+)
 masker = Masker(audit_enabled=True, audit_logger=audit)
 masker.mask({"api_key": "ABCD1234"})
 
+В лог попадает JSON с полями: timestamp, path, reason, type, app_name, hash (SHA256 исходного значения).
+
 Обработка циклических ссылок
+
 Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
 
 from maskinfly import Masker
@@ -172,7 +197,12 @@ secret = SecretStr("very_secret")
 masked = mask(secret)
 print(masked)  # '***'
 
-Использование Masker с постоянными настройками
+from pydantic import SecretStr
+from maskinfly import mask
+
+secret = SecretStr("very_secret")
+masked = mask(secret)
+print(masked)  # '***'
 
 from maskinfly import Masker
 
