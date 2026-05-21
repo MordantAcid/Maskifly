@@ -4,14 +4,17 @@ from maskinfly.tensor import Tensor
 from maskinfly.autograd import no_grad
 from maskinfly import nn
 from maskinfly import optim
+from maskinfly.decorators import mask_output
+
 from typing import Optional, Dict, Tuple, Callable, Pattern, Any
 
 __all__ = [
     "mask", "AuditLogger", "Masker",
-    "Tensor", "no_grad", "nn", "optim"
+    "Tensor", "no_grad", "nn", "optim",
+    "mask_output",
 ]
 
-__version__ = "0.1.9" 
+__version__ = "0.1.9"  # Обновляем версию
 
 def mask(data,
          audit_enabled: bool = False,
