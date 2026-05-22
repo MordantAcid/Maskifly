@@ -1,4 +1,5 @@
 import pytest
+
 from maskinfly.autograd import no_grad, is_grad_enabled
 from maskinfly.tensor import Tensor
 
