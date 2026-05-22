@@ -1,4 +1,5 @@
 import pytest
+
 from unittest.mock import patch
 from maskinfly import mask, Masker, AuditLogger, __version__
 
