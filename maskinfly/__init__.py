@@ -14,7 +14,7 @@ __all__ = [
     "mask_output",
 ]
 
-__version__ = "0.2.0"  # Обновляем версию
+__version__ = "0.2.1"  # Обновляем версию
 
 def mask(data,
          audit_enabled: bool = False,
@@ -27,7 +27,8 @@ def mask(data,
          audit_format: str = 'text',
          audit_custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
          audit_app_name: Optional[str] = None,
-         deep_mask: bool = False):   # новый параметр
+         deep_mask: bool = False,
+         audit_safe_mode: bool = False):   # новый параметр
     masker = Masker(
         audit_enabled=audit_enabled,
         audit_logger=audit_logger,
@@ -38,6 +39,7 @@ def mask(data,
         audit_format=audit_format,
         audit_custom_handler=audit_custom_handler,
         audit_app_name=audit_app_name,
-        deep_mask=deep_mask          # передаём
+        deep_mask=deep_mask,
+        audit_safe_mode=audit_safe_mode                  
     )
     return masker.mask(data, var_name=var_name)
