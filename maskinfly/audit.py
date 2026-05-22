@@ -5,7 +5,6 @@ import hashlib
 from datetime import datetime
 from typing import Optional, Callable, Dict, Any
 
-# Условный импорт SecretStr
 try:
     from pydantic import SecretStr
     HAS_PYDANTIC = True
@@ -18,7 +17,8 @@ class AuditLogger:
                  logger: Optional[logging.Logger] = None,
                  format: str = 'text',
                  custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
-                 app_name: Optional[str] = None):
+                 app_name: Optional[str] = None,
+                 safe_mode: bool = False):          # новый параметр
         if logger is None:
             self.logger = logging.getLogger("maskify.audit")
             if not self.logger.handlers:
@@ -33,12 +33,12 @@ class AuditLogger:
         self.format = format
         self.custom_handler = custom_handler
         self.app_name = app_name
+        self.safe_mode = safe_mode
 
     def _hash_value(self, value: Any, max_len: int = 8) -> Optional[str]:
         if value is None:
             return None
         try:
-            # Безопасная обработка SecretStr
             if HAS_PYDANTIC and SecretStr is not None and isinstance(value, SecretStr):
                 value = value.get_secret_value()
             str_value = str(value)
@@ -55,6 +55,26 @@ class AuditLogger:
             value: Any = None,
             app_name: Optional[str] = None) -> None:
         timestamp = datetime.now().isoformat()
+
+        # Безопасный режим: только хеш и метка времени
+        if self.safe_mode:
+            entry = {
+                "timestamp": timestamp,
+                "hash": self._hash_value(value),
+            }
+            # Для текстового формата тоже выводим минимум
+            if self.custom_handler is not None:
+                self.custom_handler(entry)
+                return
+
+            if self.format == 'json':
+                self.logger.info(json.dumps(entry))
+            else:
+                msg = f"MASKING EVENT hash={entry['hash']}"
+                self.logger.info(msg)
+            return
+
+        # Обычный режим (полная информация)
         entry = {
             "timestamp": timestamp,
             "path": path,
