@@ -1,37 +1,9 @@
-skinfly версии 0.2.0.
-
-markdown
 # maskinfly
 
 **maskinfly** – универсальная библиотека для Python, объединяющая:
 - **Рекурсивную маскировку** чувствительных данных (пароли, токены, email, номера карт, SSN, IP и др.)
 - **Лёгкий autograd** и базовые компоненты для создания нейронных сетей (тензоры с автоматическим дифференцированием, слои, оптимизаторы).
 - **CLI-утилиту** для быстрой маскировки и проверки файлов JSON/YAML.
-
-## Содержание
-
-- [Возможности](#возможности)
-- [Установка](#установка)
-- [Быстрый старт](#быстрый-старт)
-  - [Маскировка данных](#маскировка-данных)
-  - [Autograd и нейронные сети](#autograd-и-нейронные-сети)
-- [Расширенное использование](#расширенное-использование)
-  - [Параметры функции `mask()`](#параметры-функции-mask)
-  - [Глубокое маскирование (`deep_mask`)](#глубокое-маскирование-deep_mask)
-  - [Добавление собственных паттернов](#добавление-собственных-паттернов)
-  - [Загрузка конфигурации из JSON/YAML](#загрузка-конфигурации-из-jsonyaml)
-  - [Аудит с JSON и кастомным обработчиком](#аудит-с-json-и-кастомным-обработчиком)
-  - [Обработка циклических ссылок](#обработка-циклических-ссылок)
-  - [Работа с `pydantic.SecretStr`](#работа-с-pydanticsecretstr)
-- [CLI утилита](#cli-утилита)
-  - [Команда `mask`](#команда-mask)
-  - [Команда `check`](#команда-check)
-- [Декоратор `@mask_output`](#декоратор-mask_output)
-- [Autograd и нейронные сети (подробно)](#autograd-и-нейронные-сети-подробно)
-  - [Тензоры и операции](#тензоры-и-операции)
-  - [Управление градиентами](#управление-градиентами)
-  - [Построение нейронных сетей](#построение-нейронных-сетей)
-- [Лицензия](#лицензия)
 
 ## Возможности
 
@@ -42,6 +14,7 @@ markdown
 - Маскировка по имени переменной (например, `password = "secret"` → `***`).
 - **Явное указание имени переменной** через параметр `var_name` (рекомендуется для production).
 - Аудит замен: логирование пути, причины, типа и **хеша** (SHA256) исходного значения.
+- **Безопасный режим аудита** – в лог попадает только временная метка и хеш (без пути, причины, типа).
 - **Гибкий аудит**: форматы `text` или `json`, кастомный обработчик, имя приложения.
 - Простой интерфейс: функция `mask()` или класс `Masker`.
 - **Поддержка `pydantic.SecretStr`** (опционально).
@@ -71,13 +44,11 @@ markdown
 ## Установка
 
 '''bash
-
 pip install maskinfly
 
 Или из репозитария
 
 git clone "https://github.com/MordantAcid/maskifly.git"
-
 cd maskinfly
 
 Для работы с YAML и Pydantic установите дополнительные зависимости:
@@ -151,11 +122,20 @@ mask(data,
      audit_format='text',
      audit_custom_handler=None,
      audit_app_name=None,
-     deep_mask=False)
+     deep_mask=False,
+     audit_safe_mode=False)
 
 Пример с явным указанием имени переменной (рекомендуется):
 
 result = mask("my_secret_pass", var_name="password")  # '***'
+
+Безопасный режим аудита
+Включается параметром audit_safe_mode=True. При этом в лог аудита не попадают путь, причина, тип и имя приложения – только временная метка и хеш (SHA256) исходного значения. Это полезно для соблюдения требований конфиденциальности (GDPR, PCI DSS и т.п.).
+
+from maskinfly import mask
+
+### В лог попадёт только {"timestamp": "...", "hash": "abcd1234"}
+mask({"password": "secret"}, audit_enabled=True, audit_safe_mode=True)
 
 Глубокое маскирование (deep_mask)
 По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
@@ -172,23 +152,7 @@ masker_deep = Masker(deep_mask=True)
 print(masker_deep.mask(data))     # {'password': {'user': 'admin', 'token': '***'}}
 
 Добавление собственных паттернов
-Используйте метод add_pattern для динамического добавления новых правил маскировки.
-
-import re
-from maskinfly import Masker
-
-def my_replacer(match, mask_char, mask_length):
-    return mask_char * mask_length
-
-masker = Masker()
-masker.add_pattern("my_id", r"\d{4}-\d{4}", my_replacer)
-print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
-
-# Если replacer не указан, используется full_mask_replacer (полная замена)
-masker.add_pattern("simple", r"\b\d{3}\b")
-print(masker.mask("code 123"))  # 'code ***'
-
-Вы можете использовать встроенные функции замены:
+Используйте метод add_pattern для динамического добавления новых правил маскировки. Вы можете указать свою функцию замены или использовать одну из встроенных:
 
 full_mask_replacer – полная замена на маску.
 
@@ -196,8 +160,26 @@ email_mask_replacer – частичная маскировка email (перв�
 
 key_value_mask_replacer – замена только значения после ключа.
 
+import re
+from maskinfly import Masker
+from maskinfly.patterns import full_mask_replacer, key_value_mask_replacer
+
+masker = Masker()
+
+# Простая полная замена
+masker.add_pattern("my_id", r"\d{4}-\d{4}", full_mask_replacer)
+print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
+
+# Замена только значения в паре ключ=значение
+masker.add_pattern("api_key", r"(?i)(api_key)(\s*[:=]\s*)(\S+)", key_value_mask_replacer)
+print(masker.mask("api_key = abcd1234"))  # 'api_key = ***'
+
+# Если replacer не указан, используется full_mask_replacer
+masker.add_pattern("simple", r"\b\d{3}\b")
+print(masker.mask("code 123"))  # 'code ***'
+
 Загрузка конфигурации из JSON/YAML
-config.json
+config.json:
 
 {
     "mask_char": "#",
@@ -232,15 +214,13 @@ def custom_audit_handler(entry):
 audit = AuditLogger(
     format='json',
     custom_handler=custom_audit_handler,
-    app_name="my_app"
+    app_name="my_app",
+    safe_mode=False      # обычный режим
 )
 masker = Masker(audit_enabled=True, audit_logger=audit)
 masker.mask({"api_key": "ABCD1234"})
 
 В лог попадает JSON с полями: timestamp, path, reason, type, app_name, hash (SHA256 исходного значения).
-
-Обработка циклических ссылок
-Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
 
 from maskinfly import Masker
 
@@ -265,7 +245,7 @@ CLI утилита
 Команда mask
 Маскирует данные в JSON/YAML файле и сохраняет результат.
 
-maskifly mask input.json -o output.json --audit --mask-char '#' --mask-length 5
+maskifly mask input.json -o output.json --audit --mask-char '#' --mask-length 5 --deep-mask
 
 Параметры:
 
@@ -335,7 +315,8 @@ loss.backward()          # вычисление градиентов
 print(a.grad)            # [[5., 7.], [5., 7.]]
 print(b.grad)            # [[4., 4.], [6., 6.]]
 
-# Другие операции
+Дополнительные операции:
+
 x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
 y = (x ** 2).relu().exp().log()
 y.mean().backward()
@@ -360,6 +341,7 @@ print(is_grad_enabled())  # True
 
 from maskinfly import nn, optim
 from maskinfly.tensor import Tensor
+import numpy as np
 
 model = nn.Sequential(
     nn.Linear(10, 20),
