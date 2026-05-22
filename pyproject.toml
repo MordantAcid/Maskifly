@@ -26,13 +26,12 @@ classifiers = [
     "Typing :: Typed",
 ]
 keywords = ["masking", "data-masking", "privacy", "security", "pii", "secrets", "autograd", "neural-networks"]
-
-[project.scripts]
-maskifly = "maskifly.cli:main"
-
 dependencies = [
     "numpy>=1.22.0"
 ]
+
+[project.scripts]
+maskinfly = "maskinfly.cli:main"
 
 [project.optional-dependencies]
 pydantic = ["pydantic>=2.0.0"]
