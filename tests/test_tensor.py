@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from numpy.testing import assert_allclose
 from maskinfly.tensor import Tensor
 from maskinfly.autograd import no_grad
