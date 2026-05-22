@@ -1,4 +1,5 @@
 import pytest
+
 from maskinfly.audit import AuditLogger
 from maskinfly.masker import Masker
 
