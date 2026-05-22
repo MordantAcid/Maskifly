@@ -1,4 +1,5 @@
 import pytest
+
 from maskinfly import mask_output
 
 def test_mask_output_decorator_sync():
