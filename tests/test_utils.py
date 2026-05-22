@@ -1,5 +1,6 @@
 import inspect
 import pytest
+
 from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
 
 def test_sensitive_var_names():
