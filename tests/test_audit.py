@@ -1,6 +1,7 @@
 import json
 import logging
 import pytest
+
 from maskinfly.audit import AuditLogger
 
 def test_audit_json_format(caplog):
