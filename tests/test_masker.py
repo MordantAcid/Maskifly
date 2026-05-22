@@ -1,4 +1,5 @@
 import pytest
+
 from unittest.mock import patch
 from maskinfly.masker import Masker, HAS_PYDANTIC
 
