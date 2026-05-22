@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import numpy as np
+
 from typing import Any, List, Optional, Callable, Union
 from maskinfly.autograd import Context, no_grad, is_grad_enabled
 
