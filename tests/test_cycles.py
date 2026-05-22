@@ -1,4 +1,5 @@
 import pytest
+
 from maskinfly.masker import Masker
 
 def test_cycle_in_dict():
