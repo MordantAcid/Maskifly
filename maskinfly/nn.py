@@ -1,6 +1,8 @@
+import numpy as np
+
 from maskinfly.tensor import Tensor
 from typing import Optional, List
-import numpy as np
+
 
 class Module:
     def __init__(self):
