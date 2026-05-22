@@ -1,4 +1,5 @@
 import re
+
 from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH
 
 def test_patterns_are_compile():
