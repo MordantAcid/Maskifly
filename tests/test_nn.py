@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from maskinfly.tensor import Tensor
 from maskinfly.nn import Module, Linear, ReLU, Sequential, mse_loss
 from maskinfly.optim import SGD
