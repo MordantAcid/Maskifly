@@ -2,4 +2,5 @@ include LICENSE
 include README.md
 include pyproject.toml
 include requirements.txt
-recursive-include maskify *.py
+recursive-include maskinfly *.py
+include maskifly/cli.py
