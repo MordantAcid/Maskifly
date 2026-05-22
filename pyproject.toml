@@ -27,6 +27,9 @@ classifiers = [
 ]
 keywords = ["masking", "data-masking", "privacy", "security", "pii", "secrets", "autograd", "neural-networks"]
 
+[project.scripts]
+maskifly = "maskifly.cli:main"
+
 dependencies = [
     "numpy>=1.22.0"
 ]
