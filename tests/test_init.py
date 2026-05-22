@@ -43,3 +43,13 @@ def test_mask_function_with_auto_varname_enabled(caplog):
         result = mask(secret, auto_varname=True, audit_enabled=True)
     assert result == "***"
     assert len(caplog.records) > 0
+
+def test_mask_function_audit_safe_mode(caplog):
+    caplog.set_level("INFO", logger="maskify.audit")
+    mask({"password": "secret"}, audit_enabled=True, audit_safe_mode=True)
+    assert len(caplog.records) > 0
+    record = caplog.records[0]
+    # В логе не должно быть "password" или "secret"
+    assert "password" not in record.getMessage()
+    assert "secret" not in record.getMessage()
+    assert "hash=" in record.getMessage()
