@@ -42,7 +42,8 @@ class Masker:
                  audit_format: str = 'text',
                  audit_custom_handler: Optional[Callable[[Dict[str, Any]], None]] = None,
                  audit_app_name: Optional[str] = None,
-                 deep_mask: bool = False):
+                 deep_mask: bool = False,
+                 audit_safe_mode: bool = False):
         self.audit_enabled = audit_enabled
         self.auto_varname = auto_varname
         self.mask_char = mask_char
@@ -58,10 +59,18 @@ class Masker:
                 self.audit = AuditLogger(
                     format=audit_format,
                     custom_handler=audit_custom_handler,
-                    app_name=audit_app_name
+                    app_name=audit_app_name,
+                    safe_mode=audit_safe_mode
                 )
             else:
                 self.audit = audit_logger
+                if audit_safe_mode and not getattr(audit_logger, 'safe_mode', False):
+                    import warnings
+                    warnings.warn(
+                        "audit_safe_mode=True, но передан внешний AuditLogger без safe_mode. "
+                        "Безопасный режим не применяется.",
+                        UserWarning
+                    )
         else:
             self.audit = None
 
