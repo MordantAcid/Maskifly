@@ -1,8 +1,37 @@
+skinfly версии 0.2.0.
+
+markdown
 # maskinfly
 
 **maskinfly** – универсальная библиотека для Python, объединяющая:
 - **Рекурсивную маскировку** чувствительных данных (пароли, токены, email, номера карт, SSN, IP и др.)
 - **Лёгкий autograd** и базовые компоненты для создания нейронных сетей (тензоры с автоматическим дифференцированием, слои, оптимизаторы).
+- **CLI-утилиту** для быстрой маскировки и проверки файлов JSON/YAML.
+
+## Содержание
+
+- [Возможности](#возможности)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+  - [Маскировка данных](#маскировка-данных)
+  - [Autograd и нейронные сети](#autograd-и-нейронные-сети)
+- [Расширенное использование](#расширенное-использование)
+  - [Параметры функции `mask()`](#параметры-функции-mask)
+  - [Глубокое маскирование (`deep_mask`)](#глубокое-маскирование-deep_mask)
+  - [Добавление собственных паттернов](#добавление-собственных-паттернов)
+  - [Загрузка конфигурации из JSON/YAML](#загрузка-конфигурации-из-jsonyaml)
+  - [Аудит с JSON и кастомным обработчиком](#аудит-с-json-и-кастомным-обработчиком)
+  - [Обработка циклических ссылок](#обработка-циклических-ссылок)
+  - [Работа с `pydantic.SecretStr`](#работа-с-pydanticsecretstr)
+- [CLI утилита](#cli-утилита)
+  - [Команда `mask`](#команда-mask)
+  - [Команда `check`](#команда-check)
+- [Декоратор `@mask_output`](#декоратор-mask_output)
+- [Autograd и нейронные сети (подробно)](#autograd-и-нейронные-сети-подробно)
+  - [Тензоры и операции](#тензоры-и-операции)
+  - [Управление градиентами](#управление-градиентами)
+  - [Построение нейронных сетей](#построение-нейронных-сетей)
+- [Лицензия](#лицензия)
 
 ## Возможности
 
@@ -27,25 +56,17 @@
 
 - **`Tensor`** – многомерный массив (обёртка над `numpy`) с поддержкой autograd.
 - **Автоматическое дифференцирование** – градиенты скалярных функций через `.backward()`.
-- **Базовые операции**: сложение, умножение, матричное умножение, возведение в степень, релу, экспонента, логарифм, изменение формы, суммирование по оси, среднее, `stack`.
+- **Базовые операции**: сложение, умножение, матричное умножение, возведение в степень, ReLU, экспонента, логарифм, изменение формы, суммирование по оси, среднее, `stack`.
 - **Базовые слои**: `Linear`, `ReLU`, `Sequential`.
 - **Функции потерь**: `mse_loss`.
 - **Оптимизатор**: `SGD`.
 - **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов.
 - **Функция `is_grad_enabled()`** – проверка состояния вычисления градиентов.
 
-## Декоратор @mask_output
+### CLI утилита
 
-Автоматически маскирует возвращаемое значение функции, используя все возможности `mask()`.
-
-```python
-from maskinfly import mask_output
-
-@mask_output(audit_enabled=True, mask_char='#', mask_length=5)
-def get_user():
-    return {"name": "Bob", "token": "xyz789"}
-
-result = get_user()   # {'name': 'Bob', 'token': '#####'}
+- **`maskifly mask`** – маскировка данных в JSON/YAML файле.
+- **`maskifly check`** – сканирование файла на наличие чувствительных данных без их изменения.
 
 ## Установка
 
@@ -58,6 +79,10 @@ pip install maskinfly
 git clone "https://github.com/MordantAcid/maskifly.git"
 
 cd maskinfly
+
+Для работы с YAML и Pydantic установите дополнительные зависимости:
+
+pip install maskinfly[yaml,pydantic]
 
 Быстрый старт
 Маскировка данных
@@ -84,25 +109,54 @@ print(mask(f"Authorization: {jwt}"))
 # Включение аудита (логи в stderr)
 mask(data, audit_enabled=True)
 
-Настройка символа и длины маски
+Autograd и нейронные сети
 
-mask("my_secret_password", mask_char='X', mask_length=5)   # 'XXXXX'
-mask("user@example.com", mask_char='*', mask_length=4)     # 'u****@example.com'
+from maskinfly import Tensor, nn, optim
 
-Явное указание имени переменной (рекомендуется)
+# Данные (XOR)
+X = Tensor([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = Tensor([[0], [1], [1], [0]])
 
-Автоматическое определение имени переменной (auto_varname=True) работает через интроспекцию стека и медленно. Для production используйте параметр var_name:
+# Модель
+model = nn.Sequential(
+    nn.Linear(2, 4),
+    nn.ReLU(),
+    nn.Linear(4, 1)
+)
 
-result = mask("my_secret_pass", var_name="password")
-print(result)  # '***'
+optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-Маскировка по имени переменной (автоматическая, не для production)
+# Обучение
+for epoch in range(1000):
+    pred = model(X)
+    loss = nn.mse_loss(pred, y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
-secret = "my_secret_pass"
-result = mask(secret, auto_varname=True)   # медленно, не рекомендуется
-print(result)  # '***'
+print(model(X).data)  # приблизительно [[0], [1], [1], [0]]
 
-Дополнительные возможности Masker
+Расширенное использование
+Параметры функции mask()
+Функция mask() поддерживает все возможности класса Masker:
+
+mask(data,
+     audit_enabled=False,
+     audit_logger=None,
+     auto_varname=False,
+     var_name=None,
+     mask_char="*",
+     mask_length=3,
+     custom_patterns=None,
+     audit_format='text',
+     audit_custom_handler=None,
+     audit_app_name=None,
+     deep_mask=False)
+
+Пример с явным указанием имени переменной (рекомендуется):
+
+result = mask("my_secret_pass", var_name="password")  # '***'
+
 Глубокое маскирование (deep_mask)
 По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
 При deep_mask=True маскировка продолжается рекурсивно внутри значения.
@@ -117,7 +171,8 @@ print(masker_shallow.mask(data))  # {'password': '***'}
 masker_deep = Masker(deep_mask=True)
 print(masker_deep.mask(data))     # {'password': {'user': 'admin', 'token': '***'}}
 
-Добавление собственных паттернов в существующий экземпляр
+Добавление собственных паттернов
+Используйте метод add_pattern для динамического добавления новых правил маскировки.
 
 import re
 from maskinfly import Masker
@@ -133,7 +188,15 @@ print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
 masker.add_pattern("simple", r"\b\d{3}\b")
 print(masker.mask("code 123"))  # 'code ***'
 
-Загрузка конфигурации из JSON / YAML
+Вы можете использовать встроенные функции замены:
+
+full_mask_replacer – полная замена на маску.
+
+email_mask_replacer – частичная маскировка email (первый символ + маска).
+
+key_value_mask_replacer – замена только значения после ключа.
+
+Загрузка конфигурации из JSON/YAML
 config.json
 
 {
@@ -177,7 +240,6 @@ masker.mask({"api_key": "ABCD1234"})
 В лог попадает JSON с полями: timestamp, path, reason, type, app_name, hash (SHA256 исходного значения).
 
 Обработка циклических ссылок
-
 Masker корректно обрабатывает циклические ссылки, заменяя повторно встречающиеся объекты на маску:
 
 from maskinfly import Masker
@@ -197,107 +259,125 @@ secret = SecretStr("very_secret")
 masked = mask(secret)
 print(masked)  # '***'
 
-from pydantic import SecretStr
-from maskinfly import mask
+CLI утилита
+После установки становится доступна команда maskifly.
 
-secret = SecretStr("very_secret")
-masked = mask(secret)
-print(masked)  # '***'
+Команда mask
+Маскирует данные в JSON/YAML файле и сохраняет результат.
 
-from maskinfly import Masker
+maskifly mask input.json -o output.json --audit --mask-char '#' --mask-length 5
 
-masker = Masker(mask_char='#', mask_length=6)
-print(masker.mask("password=12345"))  # 'password=######'
+Параметры:
 
-Autograd и нейронные сети
-Тензоры и автоматическое дифференцирование
+input – путь к входному файлу (JSON или YAML).
 
-from maskinfly import Tensor, no_grad
-from maskinfly.autograd import is_grad_enabled
+-o, --output – путь к выходному файлу (если не указан, вывод в stdout).
 
-# Создание тензоров
+--audit – включить аудит (логи в stderr).
+
+--config – путь к JSON/YAML конфигурации для Masker.
+
+--mask-char – символ маски (по умолчанию *).
+
+--mask-length – длина маски (по умолчанию 3).
+
+--deep-mask – рекурсивно маскировать внутри чувствительных ключей.
+
+Пример:
+
+maskifly mask secrets.yaml --deep-mask --audit -o masked.yaml
+
+Команда check
+Сканирует файл на наличие чувствительных данных без их изменения.
+
+maskifly check input.json --format json
+
+Параметры:
+
+input – путь к входному файлу.
+
+--format – формат вывода: text (по умолчанию) или json.
+
+Пример вывода (text):
+
+Найдены потенциально чувствительные данные:
+  - Путь: password
+    Тип: key, причина: sensitive_key (пример: secret123)
+  - Путь: token
+    Тип: string, причина: pattern:token (пример: abc123)
+
+Декоратор @mask_output
+Автоматически маскирует возвращаемое значение функции, используя все возможности mask().
+
+from maskinfly import mask_output
+
+@mask_output(audit_enabled=True, mask_char='#', mask_length=5, deep_mask=True)
+def get_user():
+    return {"name": "Bob", "token": "xyz789", "credentials": {"password": "pass"}}
+
+result = get_user()
+# {'name': 'Bob', 'token': '#####', 'credentials': {'password': '#####'}}
+
+Декоратор поддерживает синхронные и асинхронные функции.
+
+Autograd и нейронные сети (подробно)
+Тензоры и операции
+
+from maskinfly import Tensor
+
 a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
 b = Tensor([[5.0, 6.0], [7.0, 8.0]], requires_grad=True)
 
-# Операции
 c = a.matmul(b)          # матричное умножение
 loss = c.sum()           # скалярная потеря
 loss.backward()          # вычисление градиентов
 
-print(a.grad)            # градиент по a
-print(b.grad)            # градиент по b
+print(a.grad)            # [[5., 7.], [5., 7.]]
+print(b.grad)            # [[4., 4.], [6., 6.]]
 
-# Пример с broadcasting, ReLU, экспонентой, логарифмом
+# Другие операции
 x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
 y = (x ** 2).relu().exp().log()
 y.mean().backward()
 print(x.grad)
 
-# Отключение градиентов
+# Объединение тензоров
+t1 = Tensor([1, 2], requires_grad=True)
+t2 = Tensor([3, 4], requires_grad=True)
+stacked = Tensor.stack([t1, t2], axis=0)  # форма (2,2)
+stacked.sum().backward()
+
+Управление градиентами
+
+from maskinfly.autograd import no_grad, is_grad_enabled
+
 with no_grad():
     d = a + b            # здесь градиенты не вычисляются
 
-# Проверка состояния
 print(is_grad_enabled())  # True
 
-Дополнительные операции тензоров
-
-t = Tensor([[1, 2], [3, 4]], requires_grad=True)
-
-# Суммирование по оси
-s = t.sum(axis=0)
-s.backward(np.array([1, 1]))
-
-# Изменение формы
-r = t.reshape(4)
-r.backward(np.ones(4))
-
-# Логарифм и экспонента
-log_t = t.log()
-exp_t = t.exp()
-
-# Среднее значение
-m = t.mean()
-m.backward()
-
-# Объединение тензоров
-a = Tensor([1, 2], requires_grad=True)
-b = Tensor([3, 4], requires_grad=True)
-stacked = Tensor.stack([a, b], axis=0)
-stacked.sum().backward()
-
-Простая нейронная сеть
+Построение нейронных сетей
 
 from maskinfly import nn, optim
 from maskinfly.tensor import Tensor
 
-# Данные (XOR)
-X = Tensor([[0, 0], [0, 1], [1, 0], [1, 1]], requires_grad=False)
-y = Tensor([[0], [1], [1], [0]], requires_grad=False)
-
-# Модель
 model = nn.Sequential(
-    nn.Linear(2, 4),
+    nn.Linear(10, 20),
     nn.ReLU(),
-    nn.Linear(4, 1)
+    nn.Linear(20, 1)
 )
 
-optimizer = optim.SGD(model.parameters(), lr=0.1)
+optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-# Обучение
-for epoch in range(1000):
-    pred = model(X)
+x = Tensor(np.random.randn(32, 10))
+y = Tensor(np.random.randn(32, 1))
+
+for epoch in range(100):
+    pred = model(x)
     loss = nn.mse_loss(pred, y)
-    
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    
-    if epoch % 200 == 0:
-        print(f"Epoch {epoch}, loss: {loss.data.item():.4f}")
-
-# Проверка
-print(model(X).data)
 
 Лицензия
 MIT. Подробнее в файле LICENSE.
