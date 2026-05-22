@@ -1,4 +1,5 @@
 import re
+
 from typing import Callable, Tuple, Dict, Any
 
 def full_mask_replacer(match: re.Match, mask_char: str, mask_length: int) -> str:
