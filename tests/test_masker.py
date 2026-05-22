@@ -1,4 +1,5 @@
 import pytest
+import logging
 
 from unittest.mock import patch
 from maskinfly.masker import Masker, HAS_PYDANTIC
@@ -154,3 +155,14 @@ def test_sensitive_key_deep_mask_true():
     inner = result["password"]
     assert inner["user"] == "admin"   # теперь работает
     assert inner["token"] == "***"
+
+def test_masker_audit_safe_mode(caplog):
+    caplog.set_level(logging.INFO, logger="maskify.audit")
+    masker = Masker(audit_enabled=True, audit_safe_mode=True)
+    masker.mask_string("secret123", "user.password")
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    # В безопасном режиме путь "user.password" не должен появиться
+    assert "user.password" not in record.getMessage()
+    assert "secret123" not in record.getMessage()
+    assert "hash=" in record.getMessage()
