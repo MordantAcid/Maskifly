@@ -15,6 +15,7 @@
 - **Явное указание имени переменной** через параметр `var_name` (рекомендуется для production).
 - Аудит замен: логирование пути, причины, типа и **хеша** (SHA256) исходного значения.
 - **Безопасный режим аудита** – в лог попадает только временная метка и хеш (без пути, причины, типа).
+- **Асинхронный неблокирующий аудит** с очередью и фоновым потоком.
 - **Гибкий аудит**: форматы `text` или `json`, кастомный обработчик, имя приложения.
 - Простой интерфейс: функция `mask()` или класс `Masker`.
 - **Поддержка `pydantic.SecretStr`** (опционально).
@@ -29,7 +30,7 @@
 
 - **`Tensor`** – многомерный массив (обёртка над `numpy`) с поддержкой autograd.
 - **Автоматическое дифференцирование** – градиенты скалярных функций через `.backward()`.
-- **Базовые операции**: сложение, умножение, матричное умножение, возведение в степень, ReLU, экспонента, логарифм, изменение формы, суммирование по оси, среднее, `stack`.
+- **Базовые операции**: сложение, умножение, матричное умножение, возведение в степень, ReLU, экспонента, логарифм, изменение формы, суммирование по оси, **среднее (`mean`)**, **объединение (`stack`)**.
 - **Базовые слои**: `Linear`, `ReLU`, `Sequential`.
 - **Функции потерь**: `mse_loss`.
 - **Оптимизатор**: `SGD`.
@@ -39,7 +40,33 @@
 ### CLI утилита
 
 - **`maskifly mask`** – маскировка данных в JSON/YAML файле.
-- **`maskifly check`** – сканирование файла на наличие чувствительных данных без их изменения.
+- **`maskifly check`** – сканирование файла на наличие чувствительных данных без их изменения (поддержка форматов вывода `text` и `json`).
+
+## Асинхронный аудит (неблокирующий)
+
+Для высоконагруженных систем можно включить асинхронный режим `AuditLogger`.  
+В этом случае вызов `log()` не блокирует основной поток, а помещает событие в очередь.  
+Фоновый поток обрабатывает очередь и вызывает переданный асинхронный обработчик.
+
+```python
+import asyncio
+from maskinfly import AuditLogger
+
+async def my_async_handler(entry):
+    # Отправить запись в удалённую систему (Kafka, Elasticsearch, ...)
+    await some_async_client.send(entry)
+
+audit = AuditLogger(
+    async_mode=True,
+    async_handler=my_async_handler,
+    queue_maxsize=1000  # ограничение очереди (опционально)
+)
+
+# В любом месте (синхронном или асинхронном) вызываем log() – он не блокирует
+audit.log("user.password", "sensitive_key", "str", value="secret")
+
+# При завершении приложения не забудьте остановить логгер, чтобы обработать оставшиеся записи
+audit.stop(timeout=5.0)   # ожидание до 5 секунд
 
 ## Установка
 
@@ -134,7 +161,7 @@ result = mask("my_secret_pass", var_name="password")  # '***'
 
 from maskinfly import mask
 
-### В лог попадёт только {"timestamp": "...", "hash": "abcd1234"}
+# В лог попадёт только {"timestamp": "...", "hash": "abcd1234"}
 mask({"password": "secret"}, audit_enabled=True, audit_safe_mode=True)
 
 Глубокое маскирование (deep_mask)
@@ -162,7 +189,7 @@ key_value_mask_replacer – замена только значения посл�
 
 import re
 from maskinfly import Masker
-from maskinfly.patterns import full_mask_replacer, key_value_mask_replacer
+from maskinfly.patterns import full_mask_replacer, key_value_mask_replacer, email_mask_replacer
 
 masker = Masker()
 
@@ -173,6 +200,10 @@ print(masker.mask("ID: 1234-5678"))  # 'ID: ***'
 # Замена только значения в паре ключ=значение
 masker.add_pattern("api_key", r"(?i)(api_key)(\s*[:=]\s*)(\S+)", key_value_mask_replacer)
 print(masker.mask("api_key = abcd1234"))  # 'api_key = ***'
+
+# Частичная маскировка email (локальная часть)
+masker.add_pattern("my_email", r"([\w\.-]+)@([\w\.-]+\.\w+)", email_mask_replacer)
+print(masker.mask("Contact: john.doe@example.com"))  # 'Contact: j***@example.com'
 
 # Если replacer не указан, используется full_mask_replacer
 masker.add_pattern("simple", r"\b\d{3}\b")
@@ -200,9 +231,6 @@ from maskinfly import Masker
 masker = Masker.from_config("config.json")
 print(masker.mask("my_token = abc123"))  # 'my_token = ####'
 
-Поддерживаются файлы .yaml / .yml (требуется установленный PyYAML).
-Допустимые значения replacer: "full_mask", "email_mask", "key_value".
-
 Аудит с JSON и кастомным обработчиком
 
 from maskinfly import AuditLogger, Masker
@@ -222,6 +250,8 @@ masker.mask({"api_key": "ABCD1234"})
 
 В лог попадает JSON с полями: timestamp, path, reason, type, app_name, hash (SHA256 исходного значения).
 
+Циклические ссылки
+
 from maskinfly import Masker
 
 masker = Masker()
@@ -238,6 +268,24 @@ from maskinfly import mask
 secret = SecretStr("very_secret")
 masked = mask(secret)
 print(masked)  # '***'
+
+Декоратор @mask_output
+Автоматически маскирует возвращаемое значение функции, используя все возможности mask().
+Декоратор корректно работает как с синхронными, так и с асинхронными функциями.
+
+from maskinfly import mask_output
+
+@mask_output(audit_enabled=True, mask_char='#', mask_length=5, deep_mask=True)
+def get_user():
+    return {"name": "Bob", "token": "xyz789", "credentials": {"password": "pass"}}
+
+result = get_user()
+# {'name': 'Bob', 'token': '#####', 'credentials': {'password': '#####'}}
+
+# Асинхронный пример
+@mask_output()
+async def fetch_data():
+    return {"api_key": "secret"}
 
 CLI утилита
 После установки становится доступна команда maskifly.
@@ -278,7 +326,7 @@ input – путь к входному файлу.
 
 --format – формат вывода: text (по умолчанию) или json.
 
-Пример вывода (text):
+Пример вывода в текстовом формате:
 
 Найдены потенциально чувствительные данные:
   - Путь: password
@@ -286,24 +334,15 @@ input – путь к входному файлу.
   - Путь: token
     Тип: string, причина: pattern:token (пример: abc123)
 
-Декоратор @mask_output
-Автоматически маскирует возвращаемое значение функции, используя все возможности mask().
-
-from maskinfly import mask_output
-
-@mask_output(audit_enabled=True, mask_char='#', mask_length=5, deep_mask=True)
-def get_user():
-    return {"name": "Bob", "token": "xyz789", "credentials": {"password": "pass"}}
-
-result = get_user()
-# {'name': 'Bob', 'token': '#####', 'credentials': {'password': '#####'}}
-
-Декоратор поддерживает синхронные и асинхронные функции.
+В формате JSON возвращается массив объектов с полями path, type, reason, sample.
 
 Autograd и нейронные сети (подробно)
 Тензоры и операции
 
 from maskinfly import Tensor
+from maskinfly.autograd import is_grad_enabled
+
+print(is_grad_enabled())  # True
 
 a = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
 b = Tensor([[5.0, 6.0], [7.0, 8.0]], requires_grad=True)
@@ -315,11 +354,10 @@ loss.backward()          # вычисление градиентов
 print(a.grad)            # [[5., 7.], [5., 7.]]
 print(b.grad)            # [[4., 4.], [6., 6.]]
 
-Дополнительные операции:
-
+# Дополнительные операции
 x = Tensor([1.0, 2.0, 3.0], requires_grad=True)
 y = (x ** 2).relu().exp().log()
-y.mean().backward()
+y.mean().backward()      # среднее значение и обратное распространение
 print(x.grad)
 
 # Объединение тензоров
