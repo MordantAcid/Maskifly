@@ -1,7 +1,10 @@
 import json
 import logging
 import pytest
+import asyncio
+import time
 
+from unittest.mock import AsyncMock, Mock
 from maskinfly.audit import AuditLogger
 
 def test_audit_safe_mode_text(caplog):
@@ -70,3 +73,83 @@ def test_audit_custom_handler():
     assert entries[0]["path"] == "pwd"
     assert entries[0]["app_name"] == "override"
     assert "hash" in entries[0]
+
+@pytest.mark.asyncio
+async def test_async_mode_log_non_blocking(caplog):
+    """Проверяем, что log() в асинхронном режиме не блокирует и запись в итоге появляется."""
+    caplog.set_level(logging.INFO, logger="maskify.audit")
+    logger = AuditLogger(format='text', async_mode=True, queue_maxsize=1)
+    start = time.perf_counter()
+    logger.log("path", "reason", "str", value="test")
+    elapsed = time.perf_counter() - start
+    # Постановка в очередь должна быть быстрой
+    assert elapsed < 0.01
+    # Даём время фоновому потоку обработать
+    time.sleep(0.2)
+    logger.stop()
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert "Значение маски 'path'" in record.getMessage()
+
+@pytest.mark.asyncio
+async def test_async_mode_custom_async_handler():
+    """Передаём асинхронный обработчик и проверяем, что он вызывается."""
+    entries = []
+    async def async_handler(entry):
+        entries.append(entry)
+
+    logger = AuditLogger(async_mode=True, async_handler=async_handler, queue_maxsize=1)
+    logger.log("pwd", "varname", "str", value="secret", app_name="test")
+    # Даём время фоновому потоку обработать
+    await asyncio.sleep(0.2)
+    logger.stop()
+    assert len(entries) == 1
+    entry = entries[0]
+    # В безопасном режиме (по умолчанию False) должны быть все поля
+    assert entry["path"] == "pwd"
+    assert entry["reason"] == "varname"
+    assert entry["type"] == "str"
+    assert "hash" in entry
+
+@pytest.mark.asyncio
+async def test_async_mode_queue_full():
+    """При заполненной очереди log() не блокируется и запись отбрасывается."""
+    processed = []
+
+    def handler(entry):
+        processed.append(entry)
+
+    logger = AuditLogger(async_mode=True, queue_maxsize=1, custom_handler=handler)
+    # Заполняем очередь
+    logger._queue.put_nowait({"dummy": "entry"})
+    # Следующая запись должна быть отброшена без ошибки
+    logger.log("path", "reason", "str", value="value")
+    # Останавливаем и дожидаемся обработки
+    logger.stop(timeout=1.0)
+    # Должна быть обработана только первая запись (dummy)
+    assert len(processed) == 1
+    assert processed[0] == {"dummy": "entry"}
+
+@pytest.mark.asyncio
+async def test_async_mode_stop_waits_for_empty_queue():
+    """stop() дожидается обработки всех записей."""
+    processed = 0
+    async def slow_handler(entry):
+        nonlocal processed
+        await asyncio.sleep(0.1)
+        processed += 1
+
+    logger = AuditLogger(async_mode=True, async_handler=slow_handler, queue_maxsize=0)
+    for i in range(3):
+        logger.log(f"path{i}", "reason", "str", value="x")
+    # Останавливаем с таймаутом
+    logger.stop(timeout=1.0)
+    assert processed == 3
+
+def test_async_mode_not_used_in_sync_mode():
+    """Если async_mode=False, очередь и поток не создаются."""
+    logger = AuditLogger(async_mode=False)
+    assert not hasattr(logger, '_queue')
+    assert not hasattr(logger, '_thread')
+    logger.log("path", "reason", "str", value="test")
+    # Никаких исключений
