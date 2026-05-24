@@ -58,7 +58,6 @@ def test_mask_command_stdout(sample_json, capsys):
     assert out_data["token"] == "###"
     assert out_data["nested"]["api_key"] == "###"
 
-
 def test_mask_command_with_audit(sample_json, caplog):
     import logging
     caplog.set_level(logging.INFO, logger="maskify.audit")
