@@ -4,6 +4,7 @@ from maskinfly.tensor import Tensor
 from maskinfly.autograd import no_grad
 from maskinfly import nn
 from maskinfly import optim
+from maskinfly.context import disabled
 from maskinfly.decorators import mask_output
 
 from typing import Optional, Dict, Tuple, Callable, Pattern, Any
@@ -11,10 +12,10 @@ from typing import Optional, Dict, Tuple, Callable, Pattern, Any
 __all__ = [
     "mask", "AuditLogger", "Masker",
     "Tensor", "no_grad", "nn", "optim",
-    "mask_output",
+    "mask_output", "disabled",
 ]
 
-__version__ = "0.2.4" 
+__version__ = "0.2.4"  # Обновляем версию
 
 def mask(data,
          audit_enabled: bool = False,
