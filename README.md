@@ -5,6 +5,7 @@
 - **Рекурсивную маскировку** чувствительных данных (пароли, токены, email, номера карт, SSN, IP и др.)
 - **Лёгкий autograd** и базовые компоненты для создания нейронных сетей (тензоры с автоматическим дифференцированием, слои, оптимизаторы)
 - **CLI-утилиту** для быстрой маскировки и проверки файлов JSON/YAML
+- **Готовые интеграции** с Django и FastAPI
 
 ## Возможности
 
@@ -24,6 +25,8 @@
 - Загрузка конфигурации из JSON/YAML (классовый метод `Masker.from_config`)
 - Корректная обработка циклических ссылок в изменяемых структурах
 - Маскировка по чувствительным путям (например, ключ `"password"` в словаре)
+- **Контекстный менеджер `disabled()`** – временное отключение маскировки
+- **Декоратор `@mask_output`** – автоматическая маскировка возвращаемого значения функции
 
 ### Autograd и нейронные сети
 
@@ -36,36 +39,15 @@
 - **Контекстный менеджер `no_grad()`** для отключения вычисления градиентов
 - **Функция `is_grad_enabled()`** – проверка состояния вычисления градиентов
 
+### Интеграция с веб-фреймворками
+
+- **Django**: middleware для маскировки `GET`/`POST` и JSON тела запроса
+- **FastAPI**: middleware и декоратор для маскировки JSON-ответов, зависимость
+
 ### CLI утилита
 
-- **`maskifly mask`** – маскировка данных в JSON/YAML файле
-- **`maskifly check`** – сканирование файла на наличие чувствительных данных без их изменения (поддержка форматов вывода `text` и `json`)
-
-## Асинхронный аудит (неблокирующий)
-
-Для высоконагруженных систем можно включить асинхронный режим `AuditLogger`.  
-Вызов `log()` не блокирует основной поток, а помещает событие в очередь.  
-Фоновый поток обрабатывает очередь и вызывает переданный асинхронный обработчик.
-
-```python
-import asyncio
-from maskinfly import AuditLogger
-
-async def my_async_handler(entry):
-    # Отправить запись в удалённую систему (Kafka, Elasticsearch, ...)
-    await some_async_client.send(entry)
-
-audit = AuditLogger(
-    async_mode=True,
-    async_handler=my_async_handler,
-    queue_maxsize=1000   # ограничение очереди (опционально)
-)
-
-# В любом месте (синхронном или асинхронном) вызываем log() – он не блокирует
-audit.log("user.password", "sensitive_key", "str", value="secret")
-
-# При завершении приложения не забудьте остановить логгер, чтобы обработать оставшиеся записи
-audit.stop(timeout=5.0)
+- **`maskinfly mask`** – маскировка данных в JSON/YAML файле
+- **`maskinfly check`** – сканирование файла на наличие чувствительных данных без их изменения (поддержка форматов вывода `text` и `json`)
 
 ## Установка
 
@@ -151,7 +133,8 @@ mask(data,
      deep_mask=False,
      audit_safe_mode=False)
 
-Пример с явным указанием имени переменной (рекомендуется):
+Явное указание имени переменной
+Рекомендуемый способ – передать var_name, чтобы маскировать строку, даже если auto_varname=False:
 
 result = mask("my_secret_pass", var_name="password")  # '***'
 
@@ -163,9 +146,30 @@ from maskinfly import mask
 # В лог попадёт только {"timestamp": "...", "hash": "abcd1234"}
 mask({"password": "secret"}, audit_enabled=True, audit_safe_mode=True)
 
+Асинхронный неблокирующий аудит
+Для высоконагруженных систем можно включить асинхронный режим AuditLogger. Вызов log() не блокирует основной поток, а помещает событие в очередь. Фоновый поток обрабатывает очередь и вызывает переданный асинхронный обработчик.
+
+import asyncio
+from maskinfly import AuditLogger
+
+async def my_async_handler(entry):
+    # Отправить запись в удалённую систему (Kafka, Elasticsearch, ...)
+    await some_async_client.send(entry)
+
+audit = AuditLogger(
+    async_mode=True,
+    async_handler=my_async_handler,
+    queue_maxsize=1000   # ограничение очереди (опционально)
+)
+
+# В любом месте (синхронном или асинхронном) вызываем log() – он не блокирует
+audit.log("user.password", "sensitive_key", "str", value="secret")
+
+# При завершении приложения не забудьте остановить логгер, чтобы обработать оставшиеся записи
+audit.stop(timeout=5.0)
+
 Глубокое маскирование (deep_mask)
-По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску.
-При deep_mask=True маскировка продолжается рекурсивно внутри значения.
+По умолчанию, если встречается чувствительный ключ (например, "password"), всё его значение заменяется на маску. При deep_mask=True маскировка продолжается рекурсивно внутри значения.
 
 from maskinfly import Masker
 
@@ -176,6 +180,37 @@ print(masker_shallow.mask(data))  # {'password': '***'}
 
 masker_deep = Masker(deep_mask=True)
 print(masker_deep.mask(data))     # {'password': {'user': 'admin', 'token': '***'}}
+
+Декоратор @mask_output
+Автоматически маскирует возвращаемое значение функции, используя все возможности mask(). Декоратор корректно работает как с синхронными, так и с асинхронными функциями.
+
+from maskinfly import mask_output
+
+@mask_output(audit_enabled=True, mask_char='#', mask_length=5, deep_mask=True)
+def get_user():
+    return {"name": "Bob", "token": "xyz789", "credentials": {"password": "pass"}}
+
+result = get_user()
+# {'name': 'Bob', 'token': '#####', 'credentials': {'password': '#####'}}
+
+# Асинхронный пример
+@mask_output()
+async def fetch_data():
+    return {"api_key": "secret"}
+
+Контекстный менеджер disabled()
+Временно отключает маскировку для текущего потока. Полезно для отладки или для вывода данных в безопасном контексте.
+
+from maskinfly import mask, disabled
+
+data = {"password": "secret", "user": "alice"}
+
+print(mask(data)["password"])   # '***'
+
+with disabled():
+    print(mask(data)["password"])   # 'secret'
+
+print(mask(data)["password"])   # снова '***'
 
 Добавление собственных паттернов
 Используйте метод add_pattern для динамического добавления новых правил маскировки. Вы можете указать свою функцию замены или использовать одну из встроенных: full_mask_replacer, email_mask_replacer, key_value_mask_replacer.
@@ -254,6 +289,7 @@ masker.mask({"api_key": "ABCD1234"})
 В лог попадает JSON с полями: timestamp, path, reason, type, app_name, hash (SHA256 исходного значения).
 
 Циклические ссылки
+Библиотека корректно обрабатывает циклические ссылки в изменяемых структурах, заменяя повторно посещённые объекты на маску.
 
 from maskinfly import Masker
 
@@ -272,31 +308,60 @@ secret = SecretStr("very_secret")
 masked = mask(secret)
 print(masked)  # '***'
 
-Декоратор @mask_output
-Автоматически маскирует возвращаемое значение функции, используя все возможности mask().
-Декоратор корректно работает как с синхронными, так и с асинхронными функциями.
+Интеграция с веб-фреймворками
+Django
+Добавьте MaskingMiddleware в MIDDLEWARE и настройте параметры в MASKINFLY:
 
-from maskinfly import mask_output
+# settings.py
+MIDDLEWARE = [
+    ...
+    'maskinfly.contrib.django.MaskingMiddleware',
+]
 
-@mask_output(audit_enabled=True, mask_char='#', mask_length=5, deep_mask=True)
-def get_user():
-    return {"name": "Bob", "token": "xyz789", "credentials": {"password": "pass"}}
+MASKINFLY = {
+    'mask_char': '#',
+    'mask_length': 5,
+    'audit_enabled': True,
+    'deep_mask': True,
+}
 
-result = get_user()
-# {'name': 'Bob', 'token': '#####', 'credentials': {'password': '#####'}}
+Middleware автоматически маскирует чувствительные данные в request.GET, request.POST и в разобранном JSON теле (например, от DRF).
 
-# Асинхронный пример
-@mask_output()
-async def fetch_data():
-    return {"api_key": "secret"}
+Вы также можете применить маскировку вручную:
+
+from maskinfly.contrib.django import apply_mask_to_request
+
+def my_view(request):
+    apply_mask_to_request(request)   # маскирует GET/POST/JSON
+    # ... остальная логика
+
+FastAPI
+Добавьте middleware для маскировки всех JSON-ответов:
+
+from fastapi import FastAPI
+from maskinfly.contrib.fastapi import setup_fastapi_masking
+
+app = FastAPI()
+setup_fastapi_masking(app, exclude_paths=["/health"])
+
+Или используйте декоратор для конкретного обработчика:
+
+from maskinfly.contrib.fastapi import mask_response
+
+@app.get("/user")
+@mask_response(mask_char="#", mask_length=4)
+async def get_user():
+    return {"name": "Alice", "password": "secret"}
+
+Также доступна middleware-фабрика MaskResponseMiddleware и зависимость MaskResponseDependency.
 
 CLI утилита
-После установки становится доступна команда maskifly.
+После установки становится доступна команда maskinfly.
 
 Команда mask
 Маскирует данные в JSON/YAML файле и сохраняет результат.
 
-maskifly mask input.json -o output.json --audit --mask-char '#' --mask-length 5 --deep-mask
+maskinfly mask input.json -o output.json --audit --mask-char '#' --mask-length 5 --deep-mask
 
 Параметры:
 
@@ -316,12 +381,12 @@ input – путь к входному файлу (JSON или YAML).
 
 Пример:
 
-maskifly mask secrets.yaml --deep-mask --audit -o masked.yaml
+maskinfly mask secrets.yaml --deep-mask --audit -o masked.yaml
 
 Команда check
 Сканирует файл на наличие чувствительных данных без их изменения.
 
-maskifly check input.json --format json
+maskinfly check input.json --format json
 
 Параметры:
 
@@ -404,4 +469,3 @@ for epoch in range(100):
 
 Лицензия
 MIT. Подробнее в файле LICENSE.
-
