@@ -8,6 +8,19 @@ from maskinfly.audit import AuditLogger
 from maskinfly.masker import Masker
 
 try:
+    import pytest_benchmark  # noqa: F401
+    HAS_BENCHMARK = True
+except ImportError:
+    HAS_BENCHMARK = False
+
+if not HAS_BENCHMARK:
+    import pytest
+
+    @pytest.fixture
+    def benchmark():
+        pytest.skip("pytest-benchmark не установлен. Установите: pip install pytest-benchmark")
+
+try:
     import pytest_asyncio
     HAS_ASYNCIO = True
 except ImportError:
