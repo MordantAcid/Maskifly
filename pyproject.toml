@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maskinfly"
-version = "0.2.4"
+version = "0.2.5"
 description = "Библиотека для маскировки чувствительных данных (пароли, токены, и т.д.) в строках, словарях и списках"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -43,6 +43,7 @@ test = [
     "pytest-asyncio>=1.0.0",
     "pytest-django>=4.5",
     "pytest-mock>=3.10",
+    "pytest-benchmark>=4.0.0",
     "django>=3.2",
     "fastapi>=0.100",
     "starlette>=0.27",
@@ -61,10 +62,12 @@ where = ["."]
 include = ["maskinfly*"]
 
 [tool.pytest.ini_options]
+addopts = ""
 asyncio_mode = "auto"
 markers = [
     "asyncio: marks tests as async",
     "django_db: mark test as using django database",
+    "benchmark: marks performance tests",
 ]
 minversion = "7.0"
 testpaths = ["tests"]
