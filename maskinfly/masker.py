@@ -9,6 +9,7 @@ from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH,
 from maskinfly.audit import AuditLogger
 from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
 
+from maskinfly.context import _is_masking_disabled
 from maskinfly.patterns import (
     PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH,
     full_mask_replacer, email_mask_replacer, key_value_mask_replacer
@@ -146,11 +147,13 @@ class Masker:
         return self.mask_char * self.mask_length
 
     def _apply_pattern(self, value: str) -> Tuple[str, Optional[str]]:
+        masked = value
+        last_reason = None
         for pattern_name, (regex, replace_func) in self.patterns.items():
-            if regex.search(value):
-                masked = regex.sub(lambda m: replace_func(m, self.mask_char, self.mask_length), value)
-                return masked, pattern_name
-        return value, None
+            if regex.search(masked):
+                masked = regex.sub(lambda m: replace_func(m, self.mask_char, self.mask_length), masked)
+                last_reason = pattern_name
+        return masked, last_reason
 
     def _is_sensitive_path(self, path: str) -> bool:
         if not path:
@@ -164,6 +167,11 @@ class Masker:
         return last_part.lower() in SENSITIVE_VAR_NAMES
 
     def mask(self, data: Any, path: str = "", var_name: Optional[str] = None, _visited: Optional[set] = None) -> Any:
+
+        # Если маскировка глобально отключена для этого потока – возвращаем данные как есть
+        if _is_masking_disabled():
+            return data
+
         if _visited is None:
             _visited = set()
 
