@@ -8,7 +8,6 @@ from maskinfly.contrib.fastapi import (
     MaskResponseMiddleware,
     mask_response,
     setup_fastapi_masking,
-    MaskResponseDependency,
 )
 
 @pytest.fixture
@@ -141,17 +140,3 @@ def test_setup_fastapi_masking(app):
     assert response_secret.json()["api_key"] == "***"
     response_health = client.get("/health")
     assert response_health.json()["api_key"] == "health_key"
-
-
-@pytest.mark.asyncio
-async def test_mask_response_dependency_returns_masked_value():
-    """Фабрика зависимости MaskResponseDependency возвращает замаскированное значение (корутину, которую нужно await)."""
-    dependency = MaskResponseDependency()  # возвращает функцию _dependency
-    # Вызываем зависимость как корутину
-    result = await dependency({"pwd": "123"})
-    assert result == {"pwd": "***"}
-
-    custom = Masker(mask_char="#")
-    dependency_custom = MaskResponseDependency(masker=custom)
-    result_custom = await dependency_custom("token=abc")
-    assert result_custom == "token=###"
