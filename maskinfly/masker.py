@@ -5,18 +5,10 @@ import yaml
 from typing import Any, Dict, List, Tuple, Optional, Union, Callable, Pattern
 from collections.abc import Mapping as MappingABC, Sequence as SequenceABC
 
-from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH, full_mask_replacer
+from maskinfly.patterns import PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH, full_mask_replacer, email_mask_replacer, key_value_mask_replacer
 from maskinfly.audit import AuditLogger
 from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
-
 from maskinfly.context import _is_masking_disabled
-from maskinfly.patterns import (
-    PATTERNS, DEFAULT_MASK_CHAR, DEFAULT_MASK_LENGTH,
-    full_mask_replacer, email_mask_replacer, key_value_mask_replacer
-)
-
-from maskinfly.audit import AuditLogger
-from maskinfly.utils import find_variable_name, SENSITIVE_VAR_NAMES
 
 try:
     from pydantic import SecretStr
@@ -153,7 +145,7 @@ class Masker:
             if regex.search(masked):
                 masked = regex.sub(lambda m: replace_func(m, self.mask_char, self.mask_length), masked)
                 last_reason = pattern_name
-        return masked, last_reason
+        return masked, last_reason  
 
     def _is_sensitive_path(self, path: str) -> bool:
         if not path:
@@ -166,70 +158,98 @@ class Masker:
             last_part = last_part[:bracket_pos]
         return last_part.lower() in SENSITIVE_VAR_NAMES
 
-    def mask(self, data: Any, path: str = "", var_name: Optional[str] = None, _visited: Optional[set] = None) -> Any:
+    def mask(self, data: Any, path: str = "", var_name: Optional[str] = None,
+         _memo: Optional[dict] = None, _stack: Optional[set] = None) -> Any:
+        """
+        Рекурсивно маскирует чувствительные данные.
 
+        :param data: входные данные (dict, list, str, число, None, SecretStr...)
+        :param path: текущий путь в структуре (для аудита)
+        :param var_name: явное имя переменной (приоритет над auto_varname)
+        :param _memo: словарь кеша {id(obj): masked_obj} – для разделяемых объектов
+        :param _stack: множество id объектов в текущем стеке вызовов – для обнаружения циклов
+        :return: замаскированные данные
+        """
         # Если маскировка глобально отключена для этого потока – возвращаем данные как есть
         if _is_masking_disabled():
             return data
 
-        if _visited is None:
-            _visited = set()
+        # Инициализация служебных структур при первом вызове
+        if _memo is None:
+            _memo = {}
+        if _stack is None:
+            _stack = set()
 
-        # Чувствительный путь
+        obj_id = id(data)
+
+        # Обнаружение цикла: объект уже обрабатывается в текущей ветке
+        if obj_id in _stack:
+            # Циклическая ссылка – возвращаем маску
+            return self._get_mask_str()
+
+        # Если объект уже был полностью обработан в другом месте – возвращаем кешированный результат
+        if obj_id in _memo:
+            return _memo[obj_id]
+
+        # Чувствительный путь (для словарей и списков)
         if self._is_sensitive_path(path):
-            # Для строк: при deep_mask=True не логируем сейчас – это сделает mask_string
-            if isinstance(data, str):
-                if not self.deep_mask:
-                    if self.audit_enabled and self.audit:
-                        self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
-                    return self._get_mask_str()
-                # deep_mask=True – продолжаем, не логируем
-            else:
-                # Нестроковые значения: логируем всегда
+            # Для нестроковых типов: если не deep_mask, сразу возвращаем маску
+            if not isinstance(data, str):
                 if self.audit_enabled and self.audit:
                     self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
                 if not self.deep_mask:
                     return self._get_mask_str()
-                # deep_mask=True – идём в рекурсию
+                # При deep_mask продолжаем обработку, но не кешируем результат? (кеширование остаётся)
 
-        if data is None:
-            return None
-
-        # Обнаружение циклов
-        if isinstance(data, (MappingABC, SequenceABC)) and not isinstance(data, str):
-            obj_id = id(data)
-            if obj_id in _visited:
-                return self._get_mask_str()
-            _visited.add(obj_id)
-
-        # SecretStr
+        # Обработка разных типов данных
+        # --- SecretStr (pydantic) ---
         if HAS_PYDANTIC and SecretStr is not None and isinstance(data, SecretStr):
             if self.audit_enabled and self.audit:
                 self.audit.log(path or "root", "type", "SecretStr", value=data)
-            return self._get_mask_str()
+            result = self._get_mask_str()
+            _memo[obj_id] = result
+            return result
 
-        # Строка
+        # --- Строка ---
         if isinstance(data, str):
-            return self.mask_string(data, path, var_name)
+            result = self.mask_string(data, path, var_name)
+            # Строки неизменяемы, кешировать их смысла нет, но можно для единообразия
+            _memo[obj_id] = result
+            return result
 
-        # Словарь
+        # --- Словарь ---
         if isinstance(data, MappingABC):
-            result = {}
-            for key, value in data.items():
-                new_path = f"{path}.{str(key)}" if path else str(key)
-                result[key] = self.mask(value, new_path, var_name, _visited)
-            return result
+            # Добавляем объект в стек, чтобы обнаружить циклы
+            _stack.add(obj_id)
+            result_dict = {}
+            try:
+                for key, value in data.items():
+                    new_path = f"{path}.{str(key)}" if path else str(key)
+                    result_dict[key] = self.mask(value, new_path, var_name, _memo, _stack)
+            finally:
+                _stack.remove(obj_id)
+            _memo[obj_id] = result_dict
+            return result_dict
 
-        # Последовательности
+        # --- Последовательности (list, tuple) ---
         if isinstance(data, SequenceABC) and not isinstance(data, str):
-            result = []
-            for i, item in enumerate(data):
-                new_path = f"{path}[{i}]" if path else f"[{i}]"
-                result.append(self.mask(item, new_path, var_name, _visited))
+            _stack.add(obj_id)
+            result_seq = []
+            try:
+                for i, item in enumerate(data):
+                    new_path = f"{path}[{i}]" if path else f"[{i}]"
+                    result_seq.append(self.mask(item, new_path, var_name, _memo, _stack))
+            finally:
+                _stack.remove(obj_id)
+            # Сохраняем в кеш
             if isinstance(data, tuple):
-                return tuple(result)
+                result = tuple(result_seq)
+            else:
+                result = result_seq
+            _memo[obj_id] = result
             return result
 
+        # --- Прочие неизменяемые типы (int, float, bool, None) ---
         return data
 
     def mask_string(self, value: str, path: str, var_name: Optional[str] = None) -> str:
