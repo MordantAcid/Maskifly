@@ -15,7 +15,7 @@ __all__ = [
     "mask_output", "disabled",
 ]
 
-__version__ = "0.2.6"  # Обновляем версию
+__version__ = "0.2.7"  # Обновляем версию
 
 def mask(data,
          audit_enabled: bool = False,
