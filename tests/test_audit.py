@@ -58,7 +58,7 @@ def test_audit_logger_safe_mode(caplog):
 async def test_async_mode_log_non_blocking(caplog):
     """Проверяем, что log() в асинхронном режиме не блокирует и запись в итоге появляется."""
     caplog.set_level(logging.INFO, logger="maskify.audit")
-    logger = AuditLogger(format='text', async_mode=True, queue_maxsize=1)
+    logger = AuditLogger(format='text', async_mode=True, queue_maxsize=1, drop_on_full=True)
     start = time.perf_counter()
     logger.log("path", "reason", "str", value="test")
     elapsed = time.perf_counter() - start
@@ -75,7 +75,7 @@ async def test_async_mode_custom_async_handler():
     async def async_handler(entry):
         entries.append(entry)
 
-    logger = AuditLogger(async_mode=True, async_handler=async_handler, queue_maxsize=1)
+    logger = AuditLogger(async_mode=True, async_handler=async_handler, queue_maxsize=1, drop_on_full=True)
     logger.log("pwd", "varname", "str", value="secret", app_name="test")
     await asyncio.sleep(0.2)
     logger.stop()
@@ -107,7 +107,7 @@ async def test_async_mode_stop_waits_for_empty_queue():
         await asyncio.sleep(0.1)
         processed += 1
 
-    logger = AuditLogger(async_mode=True, async_handler=slow_handler, queue_maxsize=0)
+    logger = AuditLogger(async_mode=True, async_handler=slow_handler, queue_maxsize=0, drop_on_full=True)
     for i in range(3):
         logger.log(f"path{i}", "reason", "str", value="x")
     logger.stop(timeout=1.0)
