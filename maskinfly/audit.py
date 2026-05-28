@@ -4,6 +4,7 @@ import hashlib
 import threading
 import queue
 import asyncio
+import warnings
 from datetime import datetime
 from typing import Optional, Callable, Dict, Any, Awaitable
 
@@ -25,8 +26,9 @@ class AuditLogger:
                  async_mode: bool = False,
                  async_handler: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
                  queue_maxsize: int = 0,
-                 drop_on_full: bool = False,          # NEW: потеря событий при переполнении
-                 queue_timeout: float = 0.1):         # NEW: таймаут блокирующей вставки
+                 drop_on_full: bool = False,          # будет проигнорировано в async_mode
+                 queue_timeout: float = 0.1):         # не используется в async_mode
+
         if logger is None:
             self.logger = logging.getLogger("maskify.audit")
             if not self.logger.handlers:
@@ -42,18 +44,28 @@ class AuditLogger:
         self.custom_handler = custom_handler
         self.app_name = app_name
         self.safe_mode = safe_mode
-        self.drop_on_full = drop_on_full
-        self.queue_timeout = queue_timeout
-
-        # Асинхронный режим
         self.async_mode = async_mode
-        self.async_handler = async_handler
-        self.queue_maxsize = queue_maxsize
+
+        # Для асинхронного режима всегда используем неблокирующую вставку
         if self.async_mode:
+            if not drop_on_full:
+                warnings.warn(
+                    "async_mode=True и drop_on_full=False несовместимы: в асинхронном режиме "
+                    "всегда используется неблокирующая вставка (put_nowait). drop_on_full принудительно установлен в True.",
+                    UserWarning
+                )
+            self.drop_on_full = True          # принудительно
+            self.queue_maxsize = queue_maxsize
             self._queue = queue.Queue(maxsize=queue_maxsize)
             self._stop_event = threading.Event()
             self._thread = threading.Thread(target=self._worker, daemon=True)
             self._thread.start()
+        else:
+            # Синхронный режим – параметры drop_on_full/queue_timeout не используются
+            self.drop_on_full = drop_on_full
+            self.queue_timeout = queue_timeout
+
+        self.async_handler = async_handler
 
     def _hash_value(self, value: Any, max_len: int = 8) -> Optional[str]:
         if value is None:
@@ -77,7 +89,6 @@ class AuditLogger:
         if self.format == 'json':
             self.logger.info(json.dumps(entry))
         else:
-            # Для текстового формата генерируем сообщение в зависимости от safe_mode
             if self.safe_mode:
                 msg = f"MASKING EVENT hash={entry.get('hash', '')}"
             else:
@@ -87,7 +98,6 @@ class AuditLogger:
     def _worker(self) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        # Продолжаем работу, пока не установлен флаг остановки И очередь не пуста
         while not self._stop_event.is_set() or not self._queue.empty():
             try:
                 entry = self._queue.get(timeout=0.5)
@@ -99,7 +109,6 @@ class AuditLogger:
                 else:
                     self._process_entry(entry)
             except Exception:
-                # Подавляем ошибки, чтобы поток не падал
                 pass
         loop.close()
 
@@ -111,7 +120,6 @@ class AuditLogger:
             app_name: Optional[str] = None) -> None:
         timestamp = datetime.now().isoformat()
 
-        # Безопасный режим: только хеш и метка времени
         if self.safe_mode:
             entry = {
                 "timestamp": timestamp,
@@ -129,28 +137,13 @@ class AuditLogger:
                 entry["hash"] = self._hash_value(value)
 
         if self.async_mode:
-            # ----- ИСПРАВЛЕНИЕ: обработка переполнения очереди -----
+            # Всегда неблокирующая вставка (fire-and-forget)
             try:
-                if self.drop_on_full:
-                    # Неблокирующая вставка, при переполнении – предупреждение и потеря
-                    try:
-                        self._queue.put_nowait(entry)
-                    except queue.Full:
-                        self.logger.warning(
-                            f"Audit queue full, event dropped: path={path}, reason={reason}"
-                        )
-                else:
-                    # Блокирующая вставка с таймаутом
-                    try:
-                        self._queue.put(entry, timeout=self.queue_timeout)
-                    except queue.Full:
-                        # Даже после таймаута очередь заполнена – теряем событие, но логируем ошибку
-                        self.logger.error(
-                            f"Audit queue still full after timeout {self.queue_timeout}s, event lost: {path}"
-                        )
-            except Exception as e:
-                # Любая другая ошибка не должна прерывать основной поток
-                self.logger.error(f"Unexpected error during audit enqueue: {e}")
+                self._queue.put_nowait(entry)
+            except queue.Full:
+                self.logger.warning(
+                    f"Audit queue full (maxsize={self.queue_maxsize}), event dropped: path={path}, reason={reason}"
+                )
         else:
             self._process_entry(entry)
 
