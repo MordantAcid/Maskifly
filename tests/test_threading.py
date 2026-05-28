@@ -75,7 +75,7 @@ def test_audit_logger_thread_safety():
     logger.handlers.clear()
     logger.addHandler(logging.NullHandler())
 
-    audit = AuditLogger(logger=logger, async_mode=True, queue_maxsize=100)
+    audit = AuditLogger(logger=logger, async_mode=True, queue_maxsize=100, drop_on_full=True)
     masker = Masker(audit_enabled=True, audit_logger=audit)
 
     def worker():
