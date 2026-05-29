@@ -21,10 +21,11 @@ DEFAULT_CONFIG = {
 
 
 def get_masker_from_settings() -> Masker:
-    """Создаёт экземпляр Masker на основе настроек Django."""
+    try:
+        from django.conf import settings
+    except ImportError:
+        raise ImportError("Django is not installed. Cannot use get_masker_from_settings.")
     config = getattr(settings, "MASKINFLY", {}).copy()
-    for key, value in DEFAULT_CONFIG.items():
-        config.setdefault(key, value)
     return Masker(**config)
 
 
