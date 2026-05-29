@@ -193,13 +193,14 @@ class Masker:
 
         # Чувствительный путь (для словарей и списков)
         if self._is_sensitive_path(path):
-            # Для нестроковых типов: если не deep_mask, сразу возвращаем маску
             if not isinstance(data, str):
-                if self.audit_enabled and self.audit:
+                if self.audit_enabled and self.audit and not self.deep_mask:
                     self.audit.log(path, "sensitive_path", type(data).__name__, value=data)
                 if not self.deep_mask:
-                    return self._get_mask_str()
-                # При deep_mask продолжаем обработку, но не кешируем результат? (кеширование остаётся)
+                    result = self._get_mask_str()
+                    _memo[obj_id] = result
+                    return result
+                # При deep_mask продолжаем обработку, но кеширование остаётся в конце блока
 
         # Обработка разных типов данных
         # --- SecretStr (pydantic) ---
