@@ -1,67 +1,32 @@
-import pytest
-import django
-import os
-import pytest_asyncio
-from django.conf import settings
+import inspect
 
-from maskinfly.audit import AuditLogger
-from maskinfly.masker import Masker
+from typing import Any, Optional
 
-try:
-    import pytest_benchmark  # noqa: F401
-    HAS_BENCHMARK = True
-except ImportError:
-    HAS_BENCHMARK = False
+def find_variable_name(value: Any, frame_depth: int = 2) -> Optional[str]: # эта функция медленная и отклячена по умолчанию
+    frame = inspect.currentframe()
+    try:
+        for _ in range(frame_depth):
+            if frame is None:
+                return None
+            frame = frame.f_back
+        if frame is None:
+            return None
 
-if not HAS_BENCHMARK:
-    import pytest
+        value_id = id(value)
+        # Сначала ищем в locals
+        for name, val in frame.f_locals.items():
+            if id(val) == value_id:
+                return name
+        # Потом в globals
+        for name, val in frame.f_globals.items():
+            if id(val) == value_id:
+                return name
+    finally:
+        del frame
+    return None
 
-    @pytest.fixture
-    def benchmark():
-        pytest.skip("pytest-benchmark не установлен. Установите: pip install pytest-benchmark")
-
-try:
-    import pytest_asyncio
-    HAS_ASYNCIO = True
-except ImportError:
-    HAS_ASYNCIO = False
-
-def pytest_configure():
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.django_settings')
-    if not settings.configured:
-        settings.configure(
-            DEBUG=True,
-            USE_TZ=True,
-            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
-            INSTALLED_APPS=[],
-            MIDDLEWARE=[],
-            MASKINFLY={},
-        )
-    django.setup()
-
-@pytest.fixture
-def rf():
-    from django.test.client import RequestFactory
-    return RequestFactory()
-
-@pytest.fixture
-def audit_logger():
-    from maskinfly.audit import AuditLogger
-    logger = AuditLogger()
-    logger.logger.handlers.clear()
-    return logger
-
-@pytest.fixture
-def masker_with_audit(audit_logger):
-    from maskinfly.masker import Masker
-    return Masker(audit_enabled=True, audit_logger=audit_logger)
-
-@pytest.fixture
-def masker_no_audit():
-    from maskinfly.masker import Masker
-    return Masker(audit_enabled=False)
-
-# Фикстура для пропуска асинхронных тестов, если pytest-asyncio не установлен
-def pytest_runtest_setup(item):
-    if 'asyncio' in item.keywords and not HAS_ASYNCIO:
-        pytest.skip("pytest-asyncio not installed, skipping async test")
+SENSITIVE_VAR_NAMES = {
+    'password', 'passwd', 'pwd', 'secret', 'token', 'api_key', 'apikey',
+    'credit_card', 'creditcard', 'card_number', 'ssn', 'social_security',
+    'pin', 'auth', 'bearer', 'private_key'
+}
