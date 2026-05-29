@@ -5,6 +5,8 @@ import threading
 import queue
 import asyncio
 import warnings
+
+from asyncio.log import logger
 from datetime import datetime
 from typing import Optional, Callable, Dict, Any, Awaitable
 
@@ -108,8 +110,8 @@ class AuditLogger:
                     loop.run_until_complete(self.async_handler(entry))
                 else:
                     self._process_entry(entry)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error processing audit entry: {e}")
         loop.close()
 
     def log(self,
@@ -151,6 +153,6 @@ class AuditLogger:
         """Останавливает фоновый поток и дожидается обработки оставшихся записей."""
         if not self.async_mode:
             return
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
+        if hasattr(self, '_thread') and self._thread:
+            self._stop_event.set()
             self._thread.join(timeout=timeout)
