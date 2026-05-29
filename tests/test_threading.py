@@ -89,4 +89,3 @@ def test_audit_logger_thread_safety():
         t.join()
 
     audit.stop(timeout=2.0)
-    # Если не упало – успех
