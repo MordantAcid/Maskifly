@@ -44,49 +44,31 @@ class MaskResponseMiddleware(BaseHTTPMiddleware):
         if not content_type.startswith('application/json'):
             return response
 
-        # Проверка размера ответа по заголовку Content-Length
         content_length = response.headers.get('content-length')
         if content_length is not None:
             try:
                 size = int(content_length)
                 if size > self.max_size_bytes:
                     if self.skip_on_too_large:
-                        logger.warning(
-                            f"Response size {size} bytes exceeds limit {self.max_size_bytes}, skipping masking for {request.url.path}"
-                        )
+                        logger.warning(f"Response size {size} bytes exceeds limit {self.max_size_bytes}, skipping masking for {request.url.path}")
                         return response
                     else:
-                        # Возвращаем 413 Payload Too Large
                         return JSONResponse(
                             status_code=413,
                             content={"detail": "Response payload too large for masking"},
                         )
             except ValueError:
-                pass  # некорректный заголовок – игнорируем
+                pass
 
-        # Если Content-Length отсутствует (chunked encoding) – пропускаем маскировку
+        # Если Content-Length отсутствует или не превышает лимит, читаем тело
         if content_length is None:
-            logger.debug(
-                f"Response without Content-Length (chunked) for {request.url.path}, skipping masking"
-            )
+            logger.debug(f"Response without Content-Length (chunked) for {request.url.path}, skipping masking")
             return response
 
-        # Теперь безопасно читаем тело (размер уже проверен)
+        # Читаем тело (размер уже проверен)
         body = b''
         async for chunk in response.body_iterator:
             body += chunk
-            if len(body) > self.max_size_bytes:
-                # Эта проверка на случай, если Content-Length был неверным
-                if self.skip_on_too_large:
-                    logger.warning(
-                        f"Response exceeded limit while reading, skipping masking for {request.url.path}"
-                    )
-                    return response
-                else:
-                    return JSONResponse(
-                        status_code=413,
-                        content={"detail": "Response payload too large for masking"},
-                    )
 
         if not body:
             return response
@@ -101,7 +83,7 @@ class MaskResponseMiddleware(BaseHTTPMiddleware):
                 media_type=response.media_type,
             )
         except Exception:
-            # В случае ошибки возвращаем исходный ответ
+            # В случае ошибки возвращаем исходный ответ (но тело уже прочитано)
             return Response(
                 content=body,
                 status_code=response.status_code,
