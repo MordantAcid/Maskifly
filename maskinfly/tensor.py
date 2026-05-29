@@ -107,13 +107,26 @@ class Tensor:
 
 # ---------- вспомогательные функции ----------
 def _reduce_grad(grad: np.ndarray, original_shape: tuple) -> np.ndarray:
+    """Приводит градиент к форме original_shape, учитывая broadcasting."""
     if grad.shape == original_shape:
         return grad
-    if grad.ndim > len(original_shape):
-        axes = tuple(range(grad.ndim - len(original_shape)))
-        grad = grad.sum(axis=axes)
-    if grad.ndim < len(original_shape):
-        grad = grad.reshape((1,) * (len(original_shape) - grad.ndim) + grad.shape)
+
+    # 1. Убираем лишние ведущие оси (если grad.ndim > len(original_shape))
+    extra_dims = grad.ndim - len(original_shape)
+    if extra_dims > 0:
+        axes = tuple(range(extra_dims))
+        grad = grad.sum(axis=axes, keepdims=False)
+
+    axes_to_sum = []
+    for i, (orig_dim, grad_dim) in enumerate(zip(original_shape, grad.shape)):
+        if orig_dim == 1 and grad_dim > 1:
+            axes_to_sum.append(i)
+    if axes_to_sum:
+        grad = grad.sum(axis=tuple(axes_to_sum), keepdims=True)
+
+    # 3. Если форма всё ещё не совпадает, выполняем reshape
+    if grad.shape != original_shape:
+        grad = grad.reshape(original_shape)
     return grad
 
 def _add(a: Union[Tensor, float, int], b: Union[Tensor, float, int]) -> Tensor:
@@ -198,16 +211,30 @@ def _sum(a: Tensor, axis: Optional[int] = None) -> Tensor:
     requires_grad = a.requires_grad and is_grad_enabled()
     result = Tensor(data, requires_grad=requires_grad, _children=(a,))
     if requires_grad:
-        def _sum_backward(ctx, grad):
-            shape = a.shape
-            if axis is None:
-                grad = np.full(shape, grad.item())
-            else:
-                grad = np.expand_dims(grad, axis=axis)
-                grad = np.broadcast_to(grad, shape)
-            return grad
-        result._ctx = Context(_sum_backward, None)
+        result._ctx = Context(_sum_backward, (a.shape, axis))
     return result
+
+def _sum_backward(ctx, grad):
+    original_shape, axis = ctx.saved_tensors
+    if axis is None:
+        # сумма всех элементов -> скаляр
+        if grad.ndim == 0:
+            grad_val = grad
+        elif grad.size == 1:
+            grad_val = grad.item()
+        else:
+            raise RuntimeError("Gradient for full sum must be scalar or have size 1")
+        return np.full(original_shape, grad_val, dtype=np.float32)
+    else:
+        # sum по оси (одной или нескольким)
+        if isinstance(axis, int):
+            axes = (axis,)
+        else:
+            axes = tuple(axis)
+        grad_expanded = grad
+        for ax in sorted(axes):
+            grad_expanded = np.expand_dims(grad_expanded, axis=ax)
+        return np.broadcast_to(grad_expanded, original_shape)
 
 def _reshape(a: Tensor, shape: tuple) -> Tensor:
     data = a.data.reshape(shape)
